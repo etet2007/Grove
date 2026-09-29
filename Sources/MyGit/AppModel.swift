@@ -17,6 +17,7 @@ private struct WorktreeScan {
     @Published var selectedCommit: Commit?
     @Published var diffMode: DiffMode = .unstaged
     @Published private(set) var detail = ""
+    @Published private(set) var imagePreview: ImageDiffPreview?
     @Published private(set) var isRefreshing = false
     @Published var notice: String?
     @Published var error: String?
@@ -143,7 +144,7 @@ private struct WorktreeScan {
     func selectProject(_ id: UUID) {
         selectedProjectID = id
         selectedWorktreeGroupID = selectedProject?.worktreeGroups.first?.id
-        selectedFile = nil; selectedCommit = nil; detail = ""
+        selectedFile = nil; selectedCommit = nil; detail = ""; imagePreview = nil
         focusedRepositoryID = nil
         save()
         refresh()
@@ -151,7 +152,7 @@ private struct WorktreeScan {
 
     func selectWorktreeGroup(_ id: UUID) {
         selectedWorktreeGroupID = id
-        selectedFile = nil; selectedCommit = nil; detail = ""
+        selectedFile = nil; selectedCommit = nil; detail = ""; imagePreview = nil
         focusedRepositoryID = nil
         snapshots = []; commits = []
         save()
@@ -162,7 +163,7 @@ private struct WorktreeScan {
         guard let index = projectIndex,
               let groupIndex = projects[index].worktreeGroups.firstIndex(where: { $0.id == selectedWorktreeGroupID }) else { return }
         projects[index].worktreeGroups[groupIndex].selections[repositoryID] = path
-        selectedFile = nil; selectedCommit = nil; detail = ""
+        selectedFile = nil; selectedCommit = nil; detail = ""; imagePreview = nil
         snapshots = []; commits = []
         save(); refresh()
     }
@@ -177,6 +178,7 @@ private struct WorktreeScan {
     func selectCommit(_ commit: Commit) {
         selectedCommit = commit
         selectedFile = nil
+        imagePreview = nil
         loadDetail()
     }
 
@@ -258,14 +260,20 @@ private struct WorktreeScan {
             let snapshots = selections.map { repository, worktrees, selected, fallback, scanError -> RepositorySnapshot in
                 guard let selected else {
                     return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: nil,
-                                              isFallback: false, files: [], error: scanError ?? "没有有效的检出目录")
+                                              isFallback: false, files: [], error: scanError ?? "没有有效的检出目录",
+                                              mergeRequestURL: nil)
+                }
+                let mergeRequestURL = selected.branch.flatMap {
+                    GitClient.mergeRequestURL(in: selected.path, branch: $0)
                 }
                 do {
                     return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: selected,
-                                              isFallback: fallback, files: try GitClient.changedFiles(in: selected.path, repositoryID: repository.id), error: scanError)
+                                              isFallback: fallback, files: try GitClient.changedFiles(in: selected.path, repositoryID: repository.id),
+                                              error: scanError, mergeRequestURL: mergeRequestURL)
                 } catch {
                     return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: selected,
-                                              isFallback: fallback, files: [], error: error.localizedDescription)
+                                              isFallback: fallback, files: [], error: error.localizedDescription,
+                                              mergeRequestURL: mergeRequestURL)
                 }
             }
             var commits: [Commit] = []
@@ -281,7 +289,7 @@ private struct WorktreeScan {
                 self.commits = sortedCommits
                 self.isRefreshing = false
                 if let file = self.selectedFile, !snapshots.contains(where: { $0.files.contains(file) }) {
-                    self.selectedFile = nil; self.detail = ""
+                    self.selectedFile = nil; self.detail = ""; self.imagePreview = nil
                 } else if self.selectedFile != nil { self.loadDetail(showLoading: false) }
             }
         }
@@ -294,10 +302,11 @@ private struct WorktreeScan {
         let commit = selectedCommit
         let mode = diffMode
         let snapshot = snapshots.first { $0.repository.id == (file?.repositoryID ?? commit?.repositoryID) }
-        guard let path = snapshot?.selected?.path else { detail = ""; return }
-        if showLoading { detail = "正在读取…" }
+        guard let path = snapshot?.selected?.path else { detail = ""; imagePreview = nil; return }
+        if showLoading { detail = "正在读取…"; imagePreview = nil }
         Task.detached(priority: .utility) {
             let output: String
+            let preview = file.flatMap { GitClient.imagePreview(for: $0, in: path, mode: mode) }
             do {
                 if let file { output = try GitClient.diff(for: file, in: path, mode: mode) }
                 else if let commit { output = try GitClient.show(commit, in: path) }
@@ -306,6 +315,7 @@ private struct WorktreeScan {
             await MainActor.run {
                 guard self.detailGeneration == generation else { return }
                 if self.detail != output { self.detail = output }
+                self.imagePreview = preview
             }
         }
     }

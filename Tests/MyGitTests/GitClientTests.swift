@@ -53,6 +53,41 @@ final class GitClientTests: XCTestCase {
         XCTAssertEqual(WorktreeSelection.resolve(group: group, repositoryID: repositoryID, worktrees: [primary, feature, other]), other)
     }
 
+    func testImagePreviewReadsCorrectVersionsForDeletionAndStaging() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MyGitImageTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let path = "asset.webp"
+        let url = root.appendingPathComponent(path)
+        let original = Data([0, 1, 2, 255])
+        let replacement = Data([0, 1, 3, 255])
+        _ = try GitClient.text(["init", "-b", "main"], in: root.path)
+        _ = try GitClient.text(["config", "user.name", "MyGit Test"], in: root.path)
+        _ = try GitClient.text(["config", "user.email", "mygit@example.invalid"], in: root.path)
+        try original.write(to: url)
+        _ = try GitClient.text(["add", path], in: root.path)
+        _ = try GitClient.text(["commit", "-m", "image"], in: root.path)
+
+        try replacement.write(to: url)
+        var file = try XCTUnwrap(GitClient.changedFiles(in: root.path, repositoryID: UUID()).first)
+        var preview = try XCTUnwrap(GitClient.imagePreview(for: file, in: root.path, mode: .unstaged))
+        XCTAssertEqual(preview.old.data, original)
+        XCTAssertEqual(preview.new.data, replacement)
+
+        _ = try GitClient.text(["add", path], in: root.path)
+        try FileManager.default.removeItem(at: url)
+        file = try XCTUnwrap(GitClient.changedFiles(in: root.path, repositoryID: UUID()).first)
+        preview = try XCTUnwrap(GitClient.imagePreview(for: file, in: root.path, mode: .unstaged))
+        XCTAssertEqual(preview.old.data, replacement)
+        XCTAssertNil(preview.new.data)
+        preview = try XCTUnwrap(GitClient.imagePreview(for: file, in: root.path, mode: .staged))
+        XCTAssertEqual(preview.old.data, original)
+        XCTAssertEqual(preview.new.data, replacement)
+        preview = try XCTUnwrap(GitClient.imagePreview(for: file, in: root.path, mode: .all))
+        XCTAssertEqual(preview.old.data, original)
+        XCTAssertNil(preview.new.data)
+    }
+
     func testManualWorktreeChoiceSurvivesConfigurationRoundTrip() throws {
         let repositoryID = UUID()
         var group = WorktreeGroup(name: "feature", branch: "feature")
@@ -64,5 +99,27 @@ final class GitClientTests: XCTestCase {
         let restored = try JSONDecoder().decode(Configuration.self, from: JSONEncoder().encode(original))
         XCTAssertEqual(restored.projects[0].worktreeGroups[0].selections[repositoryID], "/worktrees/feature")
         XCTAssertEqual(restored.selectedWorktreeGroupID, group.id)
+    }
+
+    func testMergeRequestURLSupportsGitLabRemotesAndEncodesBranch() {
+        let expected = "http://gitlab.example.com/team/app/-/merge_requests/new?merge_request%5Bsource_branch%5D=feature/login"
+        XCTAssertEqual(GitClient.mergeRequestURL(remoteURL: "git@gitlab.example.com:team/app.git", branch: "feature/login")?.absoluteString, expected)
+        XCTAssertEqual(GitClient.mergeRequestURL(remoteURL: "https://user:secret@gitlab.example.com/team/app.git", branch: "feature/login")?.absoluteString, expected)
+        XCTAssertEqual(GitClient.mergeRequestURL(remoteURL: "ssh://git@gitlab.example.com:2222/team/app.git", branch: "feature/login")?.absoluteString, expected)
+        XCTAssertEqual(GitClient.mergeRequestURL(remoteURL: "http://gitlab.example.com/team/app.git", branch: "feature/login")?.absoluteString, expected)
+        XCTAssertEqual(GitClient.mergeRequestURL(remoteURL: "http://gitlab.example.com:8080/team/app.git", branch: "feature/login")?.port, 8080)
+        XCTAssertNil(GitClient.mergeRequestURL(remoteURL: "/tmp/team/app", branch: "feature/login"))
+    }
+
+    func testMergeRequestURLUsesSelectedBranchRemote() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MyGitMRTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try GitClient.text(["init", "-b", "feature/login"], in: root.path)
+        _ = try GitClient.text(["remote", "add", "origin", "git@gitlab.example.com:team/default.git"], in: root.path)
+        _ = try GitClient.text(["remote", "add", "review", "https://gitlab.example.com/team/app.git"], in: root.path)
+        _ = try GitClient.text(["config", "branch.feature/login.remote", "review"], in: root.path)
+        XCTAssertEqual(GitClient.mergeRequestURL(in: root.path, branch: "feature/login")?.host, "gitlab.example.com")
+        XCTAssertEqual(GitClient.mergeRequestURL(in: root.path, branch: "feature/login")?.path, "/team/app/-/merge_requests/new")
     }
 }

@@ -1,5 +1,16 @@
 import Foundation
 
+struct ImageDiffSide {
+    let data: Data?
+    let byteCount: Int?
+    let message: String?
+}
+
+struct ImageDiffPreview {
+    let old: ImageDiffSide
+    let new: ImageDiffSide
+}
+
 enum GitError: LocalizedError {
     case command(String)
     case invalidRepository(String)
@@ -13,6 +24,8 @@ enum GitError: LocalizedError {
 
 struct GitClient {
     private static let gitURL = URL(fileURLWithPath: "/usr/bin/git")
+    private static let imageExtensions: Set<String> = ["webp", "png", "jpg", "jpeg", "gif", "heic", "heif", "tif", "tiff", "bmp", "avif"]
+    private static let imagePreviewLimit = 20_000_000
 
     static func run(_ args: [String], in directory: String) throws -> Data {
         let process = Process()
@@ -43,6 +56,56 @@ struct GitClient {
         let root = try text(["rev-parse", "--show-toplevel"], in: resolved).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !root.isEmpty else { throw GitError.invalidRepository("不是有效的 Git 仓库：\(path)") }
         return URL(fileURLWithPath: root).resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    static func mergeRequestURL(in worktree: String, branch: String) -> URL? {
+        let remotes = ((try? text(["remote"], in: worktree)) ?? "")
+            .split(whereSeparator: \.isNewline).map(String.init)
+        let upstream = try? text(["config", "--get", "branch.\(branch).remote"], in: worktree)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let remote = [upstream, "origin", remotes.count == 1 ? remotes.first : nil]
+            .compactMap { $0 }
+            .first { $0 != "." && remotes.contains($0) }
+        guard let remote,
+              let remoteURL = try? text(["remote", "get-url", remote], in: worktree)
+                .trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+        return mergeRequestURL(remoteURL: remoteURL, branch: branch)
+    }
+
+    static func mergeRequestURL(remoteURL: String, branch: String) -> URL? {
+        let remoteURL = remoteURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let components: URLComponents
+        if let parsed = URLComponents(string: remoteURL),
+           let scheme = parsed.scheme?.lowercased(), ["https", "http", "ssh"].contains(scheme) {
+            components = parsed
+        } else if let at = remoteURL.firstIndex(of: "@"),
+                  let colon = remoteURL[remoteURL.index(after: at)...].firstIndex(of: ":") {
+            let host = String(remoteURL[remoteURL.index(after: at)..<colon])
+            let path = String(remoteURL[remoteURL.index(after: colon)...])
+            guard !host.isEmpty, !path.isEmpty else { return nil }
+            var parsed = URLComponents()
+            parsed.scheme = "http"
+            parsed.host = host
+            parsed.path = "/" + path
+            components = parsed
+        } else {
+            return nil
+        }
+        guard let host = components.host, !host.isEmpty else { return nil }
+        var web = components
+        if web.scheme == "ssh" || (web.scheme == "https" && web.port == 443) {
+            web.port = nil
+        }
+        web.scheme = "http"
+        web.user = nil
+        web.password = nil
+        web.fragment = nil
+        let projectPath = web.path.hasSuffix(".git") ? String(web.path.dropLast(4)) : web.path
+        guard projectPath.split(separator: "/").count >= 2 else { return nil }
+        web.path = "/" + projectPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            + "/-/merge_requests/new"
+        web.queryItems = [URLQueryItem(name: "merge_request[source_branch]", value: branch)]
+        return web.url
     }
 
     static func worktrees(in repository: String) throws -> [Worktree] {
@@ -120,6 +183,51 @@ struct GitClient {
         }
         let output = try text(args, in: worktree)
         return output.isEmpty ? "这一视图没有可显示的修改。" : output
+    }
+
+    static func imagePreview(for file: ChangedFile, in worktree: String, mode: DiffMode) -> ImageDiffPreview? {
+        guard imageExtensions.contains(URL(fileURLWithPath: file.path).pathExtension.lowercased()) else { return nil }
+
+        func blob(_ revision: String) -> ImageDiffSide {
+            guard let sizeText = try? text(["cat-file", "-s", revision], in: worktree),
+                  let size = Int(sizeText.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                return ImageDiffSide(data: nil, byteCount: nil, message: "此版本无文件")
+            }
+            guard size <= imagePreviewLimit else {
+                return ImageDiffSide(data: nil, byteCount: size, message: "图片超过 20 MB，暂不预览")
+            }
+            guard let data = try? run(["cat-file", "blob", revision], in: worktree) else {
+                return ImageDiffSide(data: nil, byteCount: size, message: "无法读取图片")
+            }
+            return ImageDiffSide(data: data, byteCount: size, message: nil)
+        }
+
+        func workingFile() -> ImageDiffSide {
+            let url = URL(fileURLWithPath: worktree).appendingPathComponent(file.path)
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+                  let size = attributes[.size] as? NSNumber else {
+                return ImageDiffSide(data: nil, byteCount: nil, message: "此版本无文件")
+            }
+            guard size.intValue <= imagePreviewLimit else {
+                return ImageDiffSide(data: nil, byteCount: size.intValue, message: "图片超过 20 MB，暂不预览")
+            }
+            guard let data = try? Data(contentsOf: url) else {
+                return ImageDiffSide(data: nil, byteCount: size.intValue, message: "无法读取图片")
+            }
+            return ImageDiffSide(data: data, byteCount: size.intValue, message: nil)
+        }
+
+        if file.isUntracked {
+            return ImageDiffPreview(old: ImageDiffSide(data: nil, byteCount: nil, message: "此版本无文件"),
+                                    new: mode == .staged
+                                        ? ImageDiffSide(data: nil, byteCount: nil, message: "未跟踪文件没有已暂存修改")
+                                        : workingFile())
+        }
+        switch mode {
+        case .unstaged: return ImageDiffPreview(old: blob(":" + file.path), new: workingFile())
+        case .staged: return ImageDiffPreview(old: blob("HEAD:" + file.path), new: blob(":" + file.path))
+        case .all: return ImageDiffPreview(old: blob("HEAD:" + file.path), new: workingFile())
+        }
     }
 
     static func commits(in worktree: String, repositoryID: UUID, limit: Int) throws -> [Commit] {

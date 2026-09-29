@@ -20,6 +20,7 @@ private enum DetailLayout: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.openURL) private var openURL
     @State private var nameAction: NameAction?
     @State private var nameInput = ""
     @State private var quickQuery = ""
@@ -226,6 +227,28 @@ struct ContentView: View {
                 if model.focusedRepositoryID != nil {
                     Button("显示全部仓库") { model.focusedRepositoryID = nil }
                 }
+                Menu {
+                    ForEach(model.snapshots.filter {
+                        model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID
+                    }) { snapshot in
+                        if let url = snapshot.mergeRequestURL {
+                            Button("\(snapshot.repository.name) · \(snapshot.selected?.branch ?? "")") {
+                                openURL(url)
+                            }
+                        } else {
+                            Button("\(snapshot.repository.name) · 无可用分支或远端") {}
+                                .disabled(true)
+                        }
+                    }
+                } label: {
+                    Label("创建 MR", systemImage: "arrow.up.right.square")
+                }
+                .fixedSize()
+                .disabled(model.snapshots.isEmpty || !model.snapshots.contains {
+                    (model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID)
+                        && $0.mergeRequestURL != nil
+                })
+                .help("在浏览器中打开 GitLab 创建页面，使用当前检出的分支")
                 if model.isRefreshing { ProgressView().controlSize(.small) }
                 Button { model.showQuickSwitch = true } label: { Label("快速切换", systemImage: "magnifyingglass") }
                     .help("⌘K")
@@ -339,7 +362,11 @@ struct ContentView: View {
             }
             .padding(12)
             Divider()
-            if detailLayout == .split && splitDiff.hasChanges {
+            if detailLayout == .split, let preview = model.imagePreview {
+                ImageDiffView(preview: preview, oldTitle: oldDiffTitle, newTitle: newDiffTitle)
+                    .id(detailScrollIdentity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if detailLayout == .split && splitDiff.hasChanges {
                 SplitDiffView(diff: splitDiff, oldTitle: oldDiffTitle, newTitle: newDiffTitle,
                               resetID: detailScrollIdentity)
                     .id(detailScrollIdentity)
@@ -470,6 +497,64 @@ struct ContentView: View {
                 return
             }
         }
+    }
+}
+
+private struct ImageDiffView: View {
+    let preview: ImageDiffPreview
+    let oldTitle: String
+    let newTitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(changeLabel, systemImage: "photo.on.rectangle")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 12) {
+                side(preview.old, title: oldTitle)
+                side(preview.new, title: newTitle)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+    }
+
+    private var changeLabel: String {
+        switch (preview.old.byteCount != nil, preview.new.byteCount != nil) {
+        case (true, false): "图片已删除"
+        case (false, true): "新增图片"
+        case (true, true): "图片已修改"
+        case (false, false): "图片变更"
+        }
+    }
+
+    private func side(_ value: ImageDiffSide, title: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title).font(.headline)
+                Spacer()
+                if let count = value.byteCount {
+                    Text(ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            ZStack {
+                if let data = value.data, let image = NSImage(data: data) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(maxWidth: 260, maxHeight: 260)
+                } else {
+                    ContentUnavailableView(value.message ?? "此图片格式无法预览", systemImage: "photo")
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 300)
+            .background(.quaternary.opacity(0.35))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 }
 

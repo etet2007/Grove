@@ -80,6 +80,7 @@ struct RepositorySnapshot: Identifiable {
     let isFallback: Bool
     let files: [ChangedFile]
     let error: String?
+    let mergeRequestURL: URL?
 }
 
 enum DiffMode: String, CaseIterable, Identifiable {
