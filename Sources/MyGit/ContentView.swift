@@ -1,39 +1,5 @@
 import SwiftUI
 
-private enum WorkbenchStyle {
-    static let background = Color(red: 0.078, green: 0.078, blue: 0.086)
-    static let sidebar = Color(red: 0.094, green: 0.094, blue: 0.106)
-    static let surface = Color(red: 0.149, green: 0.149, blue: 0.169)
-    static let raised = Color(red: 0.165, green: 0.165, blue: 0.188)
-    static let border = Color(red: 0.22, green: 0.22, blue: 0.245)
-    static let accent = Color(red: 0.22, green: 0.74, blue: 0.97)
-    static let selection = Color(red: 0.008, green: 0.518, blue: 0.78)
-    static let muted = Color(red: 0.63, green: 0.63, blue: 0.67)
-
-    static func repositoryColor(_ name: String) -> Color {
-        let palette: [Color] = [accent, .orange, .green, .purple, .pink, .yellow]
-        let hash = name.utf8.reduce(UInt64(5381)) { ($0 &* 33) &+ UInt64($1) }
-        return palette[Int(hash % UInt64(palette.count))]
-    }
-}
-
-private struct WorkbenchButtonStyle: ButtonStyle {
-    var emphasized = false
-
-    func makeBody(configuration: ButtonStyleConfiguration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(emphasized ? Color.white : Color.primary)
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .background(emphasized ? WorkbenchStyle.selection.opacity(configuration.isPressed ? 0.75 : 1)
-                                  : WorkbenchStyle.surface.opacity(configuration.isPressed ? 0.65 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-            .overlay(RoundedRectangle(cornerRadius: 5)
-                .strokeBorder(emphasized ? WorkbenchStyle.accent.opacity(0.32) : WorkbenchStyle.border.opacity(0.65)))
-    }
-}
-
 private struct MergeRequestRowStyle: ButtonStyle {
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
         HoverRow(label: configuration.label, isPressed: configuration.isPressed)
@@ -200,9 +166,9 @@ struct ContentView: View {
     @State private var nameAction: NameAction?
     @State private var nameInput = ""
     @State private var quickQuery = ""
+    @State private var quickSelection = 0
     @State private var showMergeRequestPicker = false
     @State private var collapsedRepositoryGroups: Set<UUID> = []
-    @FocusState private var quickSearchFocused: Bool
 
     var body: some View {
         HSplitView {
@@ -222,10 +188,11 @@ struct ContentView: View {
                         .onTapGesture { model.showQuickSwitch = false }
 
                     quickSwitch
-                        .frame(width: 480, height: 420)
-                        .padding()
+                        .frame(width: 520, height: 440)
+                        .padding(16)
                         .background(WorkbenchStyle.sidebar)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WorkbenchStyle.border))
                         .shadow(color: .black.opacity(0.35), radius: 24, y: 12)
                         .onTapGesture { }
                 }
@@ -276,6 +243,7 @@ struct ContentView: View {
             }
             .frame(width: 360)
             .padding()
+            .background(WorkbenchStyle.sidebar)
         }
         .alert(model.error == nil ? "工作树已变化" : "无法完成操作",
                isPresented: Binding(get: { model.error != nil || model.notice != nil },
@@ -706,6 +674,7 @@ struct ContentView: View {
                 .padding(.vertical, 3)
             }
             Button("加载更早提交") { model.loadMoreCommits() }
+                .buttonStyle(WorkbenchButtonStyle())
                 .frame(maxWidth: .infinity)
         }
         // A new timeline must not inherit the previous checkout group's native
@@ -729,42 +698,114 @@ struct ContentView: View {
         .frame(minWidth: 430)
     }
 
+    private struct QuickResult: Identifiable {
+        let id: String
+        let title: String
+        let subtitle: String
+        let icon: String
+        let projectID: UUID
+        var groupID: UUID? = nil
+        var repositoryID: UUID? = nil
+    }
+
+    private var quickResults: [QuickResult] {
+        let query = quickQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        var results: [QuickResult] = []
+        for project in model.projects {
+            let matchesProject = query.isEmpty || project.name.localizedCaseInsensitiveContains(query)
+            if matchesProject {
+                results.append(QuickResult(id: "project:\(project.id)", title: project.name,
+                                           subtitle: AppLocalization.text("工程"), icon: "folder", projectID: project.id))
+            }
+            for group in project.worktreeGroups where matchesProject || group.name.localizedCaseInsensitiveContains(query) {
+                results.append(QuickResult(id: "group:\(group.id)", title: displayWorktreeGroupName(group.name),
+                                           subtitle: project.name, icon: "arrow.triangle.branch", projectID: project.id, groupID: group.id))
+            }
+            for repository in project.repositories where !query.isEmpty && repository.name.localizedCaseInsensitiveContains(query) {
+                results.append(QuickResult(id: "repository:\(repository.id)", title: repository.name,
+                                           subtitle: project.name, icon: "externaldrive", projectID: project.id, repositoryID: repository.id))
+            }
+        }
+        return results
+    }
+
     private var quickSwitch: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("快速切换").font(.title2.bold())
-            TextField("搜索工程、工作树组或仓库", text: $quickQuery)
-                .textFieldStyle(.roundedBorder)
-                .focused($quickSearchFocused)
+            HStack {
+                Text("快速切换").font(.system(size: 15, weight: .semibold))
+                Spacer()
+                IconActionButton(systemName: "xmark", hint: "关闭") { model.showQuickSwitch = false }
+            }
+            WorkbenchTextField(title: "搜索工程、工作树组或仓库", text: $quickQuery, icon: "magnifyingglass", autofocus: true)
                 .onSubmit { chooseFirstQuickResult() }
-            List {
-                ForEach(model.projects) { project in
-                    if quickQuery.isEmpty || project.name.localizedCaseInsensitiveContains(quickQuery) {
-                        Button(AppLocalization.text("Project · %@", project.name)) {
-                            model.selectProject(project.id); model.showQuickSwitch = false
-                        }
-                    }
-                    ForEach(project.worktreeGroups) { group in
-                        if quickQuery.isEmpty || group.name.localizedCaseInsensitiveContains(quickQuery) || project.name.localizedCaseInsensitiveContains(quickQuery) {
-                            Button(AppLocalization.text("%@ / %@", project.name, displayWorktreeGroupName(group.name))) {
-                                model.selectProject(project.id)
-                                model.selectWorktreeGroup(group.id)
-                                model.showQuickSwitch = false
+                .onKeyPress(.upArrow) { moveQuickSelection(-1); return .handled }
+                .onKeyPress(.downArrow) { moveQuickSelection(1); return .handled }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 3) {
+                        ForEach(Array(quickResults.enumerated()), id: \.element.id) { index, result in
+                            Button { chooseQuickResult(result) } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: result.icon)
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(WorkbenchStyle.accent)
+                                        .frame(width: 30, height: 30)
+                                        .background(WorkbenchStyle.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(result.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                                        Text(result.subtitle).font(.system(size: 10)).foregroundStyle(WorkbenchStyle.muted).lineLimit(1)
+                                    }
+                                    Spacer(minLength: 8)
+                                    if index == quickSelection {
+                                        Image(systemName: "return").font(.system(size: 11)).foregroundStyle(WorkbenchStyle.accent)
+                                    }
+                                }
+                                .padding(.horizontal, 10).padding(.vertical, 7)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(index == quickSelection ? WorkbenchStyle.accent.opacity(0.12) : Color.clear,
+                                            in: RoundedRectangle(cornerRadius: 6))
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(MergeRequestRowStyle())
+                            .accessibilityAddTraits(index == quickSelection ? [.isSelected] : [])
+                            .id(result.id)
                         }
-                    }
-                    ForEach(project.repositories) { repository in
-                        if repository.name.localizedCaseInsensitiveContains(quickQuery) {
-                            Button(AppLocalization.text("Repository · %@", repository.name)) {
-                                model.selectProject(project.id)
-                                model.focusedRepositoryID = repository.id
-                                model.showQuickSwitch = false
-                            }
+                        if quickResults.isEmpty {
+                            Text("无匹配结果").font(.system(size: 12)).foregroundStyle(WorkbenchStyle.muted)
+                                .frame(maxWidth: .infinity).padding(.vertical, 36)
                         }
                     }
                 }
+                .onChange(of: quickSelection) { _, index in
+                    guard quickResults.indices.contains(index) else { return }
+                    proxy.scrollTo(quickResults[index].id)
+                }
+                .onChange(of: quickQuery) { _, _ in
+                    quickSelection = 0
+                    if let first = quickResults.first { proxy.scrollTo(first.id, anchor: .top) }
+                }
             }
+            HStack(spacing: 14) {
+                Text("↑ ↓  选择")
+                Text("↵  打开")
+                Spacer()
+                Text("esc  关闭")
+            }
+            .font(.system(size: 10)).foregroundStyle(WorkbenchStyle.muted)
         }
-        .onAppear { quickQuery = ""; quickSearchFocused = true }
+        .onAppear { quickQuery = ""; quickSelection = 0 }
+        .onExitCommand { model.showQuickSwitch = false }
+    }
+
+    private func moveQuickSelection(_ offset: Int) {
+        quickSelection = min(max(0, quickSelection + offset), max(0, quickResults.count - 1))
+    }
+
+    private func chooseQuickResult(_ result: QuickResult) {
+        model.selectProject(result.projectID)
+        if let groupID = result.groupID { model.selectWorktreeGroup(groupID) }
+        if let repositoryID = result.repositoryID { model.focusedRepositoryID = repositoryID }
+        model.showQuickSwitch = false
     }
 
     private func present(_ action: NameAction) {
@@ -792,30 +833,10 @@ struct ContentView: View {
     }
 
     private func chooseFirstQuickResult() {
-        let query = quickQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return }
-        for project in model.projects {
-            if let group = project.worktreeGroups.first(where: { $0.name.localizedCaseInsensitiveContains(query) }) {
-                model.selectProject(project.id)
-                model.selectWorktreeGroup(group.id)
-                model.showQuickSwitch = false
-                return
-            }
-        }
-        for project in model.projects {
-            if let repository = project.repositories.first(where: { $0.name.localizedCaseInsensitiveContains(query) }) {
-                model.selectProject(project.id)
-                model.focusedRepositoryID = repository.id
-                model.showQuickSwitch = false
-                return
-            }
-            if project.name.localizedCaseInsensitiveContains(query) {
-                model.selectProject(project.id)
-                model.showQuickSwitch = false
-                return
-            }
-        }
+        guard quickResults.indices.contains(quickSelection) else { return }
+        chooseQuickResult(quickResults[quickSelection])
     }
+
 }
 
 private struct ImageDiffView: View {
@@ -885,16 +906,21 @@ private struct NameSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(LocalizedStringKey(title)).font(.title2.bold())
-            TextField("名称", text: $name)
+            WorkbenchTextField(title: "名称", text: $name)
                 .onSubmit { if !name.trimmingCharacters(in: .whitespaces).isEmpty { onSave(name) } }
             HStack {
                 Spacer()
                 Button("取消") { dismiss() }
+                    .buttonStyle(WorkbenchButtonStyle())
+                    .keyboardShortcut(.cancelAction)
                 Button("创建") { onSave(name) }
+                    .buttonStyle(WorkbenchButtonStyle(emphasized: true))
                     .keyboardShortcut(.defaultAction)
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
+        .padding(8)
+        .background(WorkbenchStyle.sidebar)
     }
 }
 
@@ -918,36 +944,17 @@ private struct DetailPaneView: View {
                     .padding(.horizontal, 12).padding(.top, 12)
                     .help(file.path)
             }
-            HStack {
-                if state.selectedFile != nil {
-                    Picker("Diff", selection: $state.diffMode) {
-                        ForEach(DiffMode.allCases) { mode in Text(AppLocalization.text(mode.rawValue)).tag(mode) }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 240)
-                    .onChange(of: state.diffMode) { _, _ in model.loadDetail(tab: tab) }
-                } else if let commit = state.selectedCommit {
-                    Text(commit.subject).font(.headline).lineLimit(1)
-                } else {
-                    Text(AppLocalization.text("选择文件或提交")).foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    detailHeading
+                    Spacer(minLength: 12)
+                    if state.selectedFile != nil || state.selectedCommit != nil { layoutControl }
                 }
-                Spacer(minLength: 0)
-                if state.selectedFile != nil || state.selectedCommit != nil {
-                    HStack(spacing: 2) {
-                        ForEach(DetailLayout.allCases) { layout in
-                            WorkbenchTabButton(title: layout.rawValue,
-                                               icon: layout == .split ? "rectangle.split.1x2" : "rectangle.split.2x1",
-                                               selected: detailLayout == layout) {
-                                detailLayout = layout
-                            }
-                        }
-                    }
-                    .padding(2)
-                    .background(WorkbenchStyle.background)
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
-                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(WorkbenchStyle.border))
-                    .fixedSize()
+                VStack(alignment: .leading, spacing: 8) {
+                    detailHeading
+                    if state.selectedFile != nil || state.selectedCommit != nil { layoutControl }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(12)
             Divider()
@@ -969,6 +976,36 @@ private struct DetailPaneView: View {
         }
         .frame(minWidth: 430)
         .background(WorkbenchStyle.background)
+    }
+
+    @ViewBuilder private var detailHeading: some View {
+        if state.selectedFile != nil {
+            WorkbenchSegments(title: "Diff", values: DiffMode.allCases, selection: $state.diffMode) {
+                AppLocalization.text($0.rawValue)
+            }
+            .onChange(of: state.diffMode) { _, _ in model.loadDetail(tab: tab) }
+        } else if let commit = state.selectedCommit {
+            Text(commit.subject).font(.headline).lineLimit(1)
+        } else {
+            Text(AppLocalization.text("选择文件或提交")).foregroundStyle(.secondary)
+        }
+    }
+
+    private var layoutControl: some View {
+        HStack(spacing: 2) {
+            ForEach(DetailLayout.allCases) { layout in
+                WorkbenchTabButton(title: layout.rawValue,
+                                   icon: layout == .split ? "rectangle.split.1x2" : "rectangle.split.2x1",
+                                   selected: detailLayout == layout) {
+                    detailLayout = layout
+                }
+            }
+        }
+        .padding(2)
+        .background(WorkbenchStyle.background)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(WorkbenchStyle.border))
+        .fixedSize()
     }
 
     private var rawDetail: some View {

@@ -16,7 +16,7 @@ struct CommitDetailView: View {
                 counts(additions: patch.additions, deletions: patch.deletions)
                 Spacer()
                 Button(AppLocalization.text(showAll ? "Return to Single File" : "Show All")) { showAll.toggle() }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(WorkbenchButtonStyle())
             }
             .font(.system(size: 12))
             .padding(.horizontal, 12)
@@ -79,7 +79,7 @@ struct CommitDetailView: View {
                     Button { selectedIndex += 1 } label: { Image(systemName: "chevron.down") }
                         .disabled(selectedIndex == patch.files.count - 1).help(AppLocalization.text("下一个文件"))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(WorkbenchButtonStyle())
                 .padding(12)
                 Divider()
             }

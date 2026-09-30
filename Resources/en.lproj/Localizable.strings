@@ -125,3 +125,9 @@
 "File deleted · %ld lines" = "File deleted · %ld lines";
 "New file · %ld lines" = "New file · %ld lines";
 "%@ · +%ld / −%ld" = "%@ · +%ld / −%ld";
+"关闭" = "Close";
+"无匹配结果" = "No matching results";
+"↑ ↓  选择" = "↑ ↓  Select";
+"↵  打开" = "↵  Open";
+"esc  关闭" = "esc  Close";
+"工程" = "Project";
