@@ -218,13 +218,6 @@ struct ContentView: View {
                 }
                 .buttonStyle(WorkbenchButtonStyle())
                 .help("搜索工程、工作树组或仓库 (⌘K)")
-                IconActionButton(systemName: "arrow.clockwise", hint: "刷新 (⌘R)") { model.refresh() }
-                    .overlay {
-                        if model.isRefreshing {
-                            ProgressView().controlSize(.mini).padding(4).background(WorkbenchStyle.surface)
-                                .allowsHitTesting(false)
-                        }
-                    }
                 HStack(spacing: 0) { mergeRequestMenu }
             }
         }
@@ -251,9 +244,6 @@ struct ContentView: View {
                                     set: { if !$0 { model.error = nil; model.notice = nil } })) {
             Button("好") { model.error = nil; model.notice = nil }
         } message: { Text(model.error ?? model.notice ?? "") }
-        .onReceive(Timer.publish(every: 4, on: .main, in: .common).autoconnect()) { _ in
-            if !model.isRefreshing { model.refresh() }
-        }
     }
 
     private var sidebar: some View {
@@ -287,7 +277,7 @@ struct ContentView: View {
             }
             HStack(spacing: 6) {
                 Circle().fill(model.isRefreshing ? Color.orange : Color.green).frame(width: 6, height: 6)
-                Text(model.isRefreshing ? "正在刷新本地状态" : "本地仓库 · 自动刷新")
+                Text(model.isRefreshing ? "正在刷新本地状态" : "本地仓库 · 前台每 10 秒刷新")
                 Spacer(minLength: 0)
                 Text("只读")
             }

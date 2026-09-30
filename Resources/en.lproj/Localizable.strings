@@ -20,7 +20,7 @@
 "恢复隐藏的分支组" = "Restore Hidden Branch Groups";
 "关联仓库" = "Repositories";
 "正在刷新本地状态" = "Refreshing Local Status";
-"本地仓库 · 自动刷新" = "Local Repositories · Auto Refresh";
+"本地仓库 · 前台每 10 秒刷新" = "Local Repositories · Refresh Every 10s in Foreground";
 "只读" = "Read Only";
 "收起" = "Collapse";
 "展开" = "Expand";

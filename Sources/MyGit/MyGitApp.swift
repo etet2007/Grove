@@ -13,6 +13,7 @@ import SwiftUI
 
 private struct MyGitWindow: View {
     @StateObject private var model = AppModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ContentView()
@@ -21,6 +22,20 @@ private struct MyGitWindow: View {
             .background(WindowTitleHider())
             .frame(minWidth: 1000, minHeight: 650)
             .preferredColorScheme(.dark)
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active && !model.isRefreshing {
+                    model.refresh()
+                }
+            }
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(10)) }
+                    catch { return }
+                    guard !Task.isCancelled, scenePhase == .active else { return }
+                    if !model.isRefreshing { model.refresh() }
+                }
+            }
     }
 }
 
