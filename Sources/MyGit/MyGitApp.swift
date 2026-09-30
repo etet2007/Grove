@@ -68,21 +68,21 @@ private struct WorktreeCommands: Commands {
                     .disabled(model == nil)
                 Divider()
                 ForEach(model?.projects ?? []) { project in
-                    Menu(project.name) {
+                    Menu(LocalizedStringKey(project.name)) {
                         ForEach(project.worktreeGroups) { group in
-                            Menu(group.name) {
+                            Menu(LocalizedStringKey(group.name)) {
                                 Button("切换整组") {
                                     model?.selectProject(project.id)
                                     model?.selectWorktreeGroup(group.id)
                                 }
                                 ForEach(project.repositories) { repository in
-                                    Menu(repository.name) {
+                                    Menu(LocalizedStringKey(repository.name)) {
                                         if model?.selectedProjectID == project.id,
                                            model?.selectedWorktreeGroupID == group.id,
                                            let snapshot = model?.snapshots.first(where: { $0.repository.id == repository.id }) {
                                             Button("自动匹配") { model?.selectWorktree(nil, for: repository.id) }
                                             ForEach(snapshot.worktrees) { worktree in
-                                                Button("\(worktree.branch ?? "分离 HEAD") · \(worktree.isPrimary ? "主目录" : URL(fileURLWithPath: worktree.path).lastPathComponent)") {
+                                                Button(AppLocalization.text("%@ · %@", worktree.branch ?? AppLocalization.text("分离 HEAD"), worktree.isPrimary ? AppLocalization.text("主目录") : URL(fileURLWithPath: worktree.path).lastPathComponent)) {
                                                     model?.selectWorktree(worktree.path, for: repository.id)
                                                 }
                                             }

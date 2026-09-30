@@ -12,10 +12,10 @@ struct CommitDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Text("\(patch.files.count) 个文件").fontWeight(.semibold)
+                Text(AppLocalization.text("%ld files", patch.files.count)).fontWeight(.semibold)
                 counts(additions: patch.additions, deletions: patch.deletions)
                 Spacer()
-                Button(showAll ? "返回单文件" : "查看全部") { showAll.toggle() }
+                Button(AppLocalization.text(showAll ? "Return to Single File" : "Show All")) { showAll.toggle() }
                     .buttonStyle(.borderless)
             }
             .font(.system(size: 12))
@@ -30,7 +30,7 @@ struct CommitDetailView: View {
                                 showAll = false
                             } label: {
                                 HStack(alignment: .top, spacing: 10) {
-                                    Text(file.change.badge)
+                                    Text(AppLocalization.text(file.change.badge))
                                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                                         .foregroundStyle(changeColor(file.change))
                                         .frame(width: 22, height: 22)
@@ -38,13 +38,13 @@ struct CommitDetailView: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(file.name).font(.system(size: 12, weight: .semibold))
                                             .lineLimit(1).truncationMode(.middle)
-                                        Text(file.directory.isEmpty ? "仓库根目录" : file.directory)
+                                        Text(file.directory.isEmpty ? AppLocalization.text("仓库根目录") : file.directory)
                                             .font(.system(size: 10)).foregroundStyle(.secondary)
                                             .lineLimit(1).truncationMode(.middle)
                                     }
                                     Spacer(minLength: 4)
                                     if file.isBinary {
-                                        Text("二进制").font(.system(size: 11)).foregroundStyle(.secondary)
+                                        Text(AppLocalization.text("二进制")).font(.system(size: 11)).foregroundStyle(.secondary)
                                     } else { counts(additions: file.additions, deletions: file.deletions) }
                                 }
                                 .padding(.horizontal, 10).padding(.vertical, 7)
@@ -75,9 +75,9 @@ struct CommitDetailView: View {
                     Text("\(selectedIndex + 1) / \(patch.files.count)")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     Button { selectedIndex -= 1 } label: { Image(systemName: "chevron.up") }
-                        .disabled(selectedIndex == 0).help("上一个文件")
+                        .disabled(selectedIndex == 0).help(AppLocalization.text("上一个文件"))
                     Button { selectedIndex += 1 } label: { Image(systemName: "chevron.down") }
-                        .disabled(selectedIndex == patch.files.count - 1).help("下一个文件")
+                        .disabled(selectedIndex == patch.files.count - 1).help(AppLocalization.text("下一个文件"))
                 }
                 .buttonStyle(.borderless)
                 .padding(12)
@@ -110,12 +110,13 @@ struct CommitDetailView: View {
     }
 
     private var fileDescription: String {
-        if let oldPath = selected.oldPath { return "\(selected.change.rawValue)自 \(oldPath)" }
-        if selected.isBinary { return "\(selected.change.rawValue) · 二进制文件" }
+        let change = AppLocalization.text(selected.change.rawValue)
+        if let oldPath = selected.oldPath { return AppLocalization.text("%@ from %@", change, oldPath) }
+        if selected.isBinary { return AppLocalization.text("%@ · Binary file", change) }
         switch selected.change {
-        case .deleted: return "文件已删除 · \(selected.deletions) 行"
-        case .added: return "新增文件 · \(selected.additions) 行"
-        default: return "\(selected.change.rawValue) · +\(selected.additions) / −\(selected.deletions)"
+        case .deleted: return AppLocalization.text("File deleted · %ld lines", selected.deletions)
+        case .added: return AppLocalization.text("New file · %ld lines", selected.additions)
+        default: return AppLocalization.text("%@ · +%ld / −%ld", change, selected.additions, selected.deletions)
         }
     }
 

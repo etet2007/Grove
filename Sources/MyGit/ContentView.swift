@@ -71,8 +71,8 @@ private struct IconActionButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .help(hint)
-        .accessibilityLabel(hint)
+        .help(AppLocalization.text(hint))
+        .accessibilityLabel(AppLocalization.text(hint))
     }
 }
 
@@ -95,7 +95,7 @@ private struct WorkbenchMenu<Content: View, Label: View>: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(title)
+        .accessibilityLabel(Text(LocalizedStringKey(title)))
         .onHover { isHovered = $0 }
         .popover(isPresented: $isMenuOpen, arrowEdge: arrowEdge) {
             ScrollView {
@@ -164,7 +164,7 @@ private struct WorkbenchTabButton: View {
             HStack(spacing: 6) {
                 Image(systemName: icon).font(.system(size: 12))
                     .foregroundStyle(selected ? WorkbenchStyle.accent : WorkbenchStyle.muted)
-                Text(title)
+                Text(AppLocalization.text(title))
                 if let count {
                     Text("\(count)")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -214,6 +214,24 @@ struct ContentView: View {
                 mainArea
             }
         }
+        .overlay {
+            if model.showQuickSwitch {
+                ZStack {
+                    Color.black.opacity(0.35)
+                        .contentShape(Rectangle())
+                        .onTapGesture { model.showQuickSwitch = false }
+
+                    quickSwitch
+                        .frame(width: 480, height: 420)
+                        .padding()
+                        .background(WorkbenchStyle.sidebar)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .shadow(color: .black.opacity(0.35), radius: 24, y: 12)
+                        .onTapGesture { }
+                }
+                .zIndex(1)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .navigation) { HStack(spacing: 0) { projectMenu } }
             ToolbarItem(placement: .navigation) { HStack(spacing: 0) { currentWorktreeMenu } }
@@ -258,11 +276,6 @@ struct ContentView: View {
             }
             .frame(width: 360)
             .padding()
-        }
-        .sheet(isPresented: $model.showQuickSwitch) {
-            quickSwitch
-                .frame(width: 480, height: 420)
-                .padding()
         }
         .alert(model.error == nil ? "工作树已变化" : "无法完成操作",
                isPresented: Binding(get: { model.error != nil || model.notice != nil },
@@ -331,7 +344,7 @@ struct ContentView: View {
                         Image(systemName: expanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 10, weight: .semibold))
                             .frame(width: 16)
-                        Text(group.name).lineLimit(1)
+                        Text(LocalizedStringKey(group.name)).lineLimit(1)
                         Text("(\(repositories.count))")
                             .font(.system(size: 10, design: .monospaced))
                         Spacer(minLength: 0)
@@ -342,8 +355,8 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(expanded ? "收起" : "展开")仓库组 \(group.name)")
-                IconActionButton(systemName: "folder.badge.plus", hint: "导入仓库到\(group.name)") {
+                .accessibilityLabel(AppLocalization.text(expanded ? "收起仓库组 %@" : "展开仓库组 %@", group.name))
+                IconActionButton(systemName: "folder.badge.plus", hint: AppLocalization.text("导入仓库到%@", group.name)) {
                     chooseRepositories(for: group.id)
                 }
             }
@@ -367,10 +380,10 @@ struct ContentView: View {
                     .font(.system(size: 13))
                     .frame(width: 16)
                     .foregroundStyle(selected ? Color.white : WorkbenchStyle.muted)
-                Text(group.name).lineLimit(1)
+                Text(LocalizedStringKey(group.name)).lineLimit(1)
                 Spacer(minLength: 0)
                 if selected {
-                    Text("\(model.snapshots.filter { !$0.isFallback }.count) 仓")
+                    Text(AppLocalization.text("%ld repos", model.snapshots.filter { !$0.isFallback }.count))
                         .font(.system(size: 10, weight: .semibold))
                         .padding(.horizontal, 5).padding(.vertical, 2)
                         .background(Color.black.opacity(0.15))
@@ -417,7 +430,7 @@ struct ContentView: View {
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1).truncationMode(.middle)
                 if let count = model.selectedProject?.repositories.count {
-                    Text("\(count) 仓库")
+                    Text(AppLocalization.text("%ld repositories", count))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(WorkbenchStyle.muted)
                         .padding(.horizontal, 5)
@@ -443,7 +456,7 @@ struct ContentView: View {
 
     private func sidebarHeader(_ title: String, action: NameAction) -> some View {
         HStack {
-            Text(title)
+            Text(LocalizedStringKey(title))
                 .font(.system(size: 12, weight: .bold))
                 .tracking(0.4)
                 .foregroundStyle(Color(red: 0.84, green: 0.84, blue: 0.87))
@@ -466,7 +479,7 @@ struct ContentView: View {
                 Button {
                     model.selectWorktree(worktree.path, for: repository.id)
                 } label: {
-                    Text("\(worktree.branch ?? "分离 HEAD") · \(worktree.isPrimary ? "主目录" : URL(fileURLWithPath: worktree.path).lastPathComponent)")
+                    Text(AppLocalization.text("%@ · %@", worktree.branch ?? AppLocalization.text("分离 HEAD"), worktree.isPrimary ? AppLocalization.text("主目录") : URL(fileURLWithPath: worktree.path).lastPathComponent))
                 }
             }
         } label: {
@@ -477,7 +490,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(repository.name).font(.system(size: 12, weight: .regular)).lineLimit(1)
                     if let selected = snapshot?.selected {
-                        Text(selected.branch ?? "分离 HEAD")
+                        Text(selected.branch ?? AppLocalization.text("分离 HEAD"))
                             .font(.system(size: 10, design: .monospaced)).foregroundStyle(WorkbenchStyle.muted).lineLimit(1)
                     }
                 }
@@ -500,7 +513,7 @@ struct ContentView: View {
             if let project = model.selectedProject {
                 Menu("移动到仓库组") {
                     ForEach(project.groups) { group in
-                        Button(group.name) { model.moveRepository(repository.id, to: group.id) }
+                        Button(LocalizedStringKey(group.name)) { model.moveRepository(repository.id, to: group.id) }
                     }
                 }
             }
@@ -513,12 +526,12 @@ struct ContentView: View {
     private var currentWorktreeMenu: some View {
         WorkbenchMenu(title: model.selectedGroup?.name ?? "工作树组") {
             ForEach(model.selectedProject?.worktreeGroups ?? []) { group in
-                Button(group.name) { model.selectWorktreeGroup(group.id) }
+                Button(LocalizedStringKey(group.name)) { model.selectWorktreeGroup(group.id) }
             }
         } label: {
             HStack(spacing: 6) {
                 Circle().fill(Color.green).frame(width: 6, height: 6)
-                Text(model.selectedGroup?.name ?? "工作树组")
+                Text(AppLocalization.text(model.selectedGroup?.name ?? "工作树组"))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .lineLimit(1).truncationMode(.middle)
             }
@@ -609,7 +622,7 @@ struct ContentView: View {
                 detailPane
             }
             HStack {
-                Text("\(model.snapshots.count) 个仓库 · \(model.snapshots.reduce(0) { $0 + $1.files.count }) 个修改文件")
+                Text(AppLocalization.text("%ld repositories · %ld changed files", model.snapshots.count, model.snapshots.reduce(0) { $0 + $1.files.count }))
                 Spacer()
                 if model.focusedRepositoryID != nil {
                     Button("显示全部仓库") { model.focusedRepositoryID = nil }.buttonStyle(.plain)
@@ -627,7 +640,7 @@ struct ContentView: View {
     }
 
     private func contentTab(_ title: String, icon: String, count: Int?, index: Int) -> some View {
-        WorkbenchTabButton(title: title, icon: icon, count: count, selected: model.activeTab == index) {
+        WorkbenchTabButton(title: AppLocalization.text(title), icon: icon, count: count, selected: model.activeTab == index) {
             model.activeTab = index
         }
     }
@@ -655,14 +668,14 @@ struct ContentView: View {
                         Text(snapshot.repository.name).lineLimit(1)
                         if snapshot.isFallback { Text("共享主目录").foregroundStyle(.orange) }
                         if let selected = snapshot.selected {
-                            Text(selected.branch ?? "分离 HEAD").foregroundStyle(.secondary).lineLimit(1)
+                            Text(selected.branch ?? AppLocalization.text("分离 HEAD")).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 4)
                         let conflicts = snapshot.files.filter { $0.changeKind == .conflict }.count
                         if conflicts > 0 {
-                            Text("\(conflicts) 冲突").foregroundStyle(.red).fixedSize()
+                            Text(AppLocalization.text("%ld conflicts", conflicts)).foregroundStyle(.red).fixedSize()
                         }
-                        Text("\(snapshot.files.count) 变动").foregroundStyle(.secondary).fixedSize()
+                        Text(AppLocalization.text("%ld changes", snapshot.files.count)).foregroundStyle(.secondary).fixedSize()
                     }
                 }
             }
@@ -722,13 +735,13 @@ struct ContentView: View {
             List {
                 ForEach(model.projects) { project in
                     if quickQuery.isEmpty || project.name.localizedCaseInsensitiveContains(quickQuery) {
-                        Button("工程 · \(project.name)") {
+                        Button(AppLocalization.text("Project · %@", project.name)) {
                             model.selectProject(project.id); model.showQuickSwitch = false
                         }
                     }
                     ForEach(project.worktreeGroups) { group in
                         if quickQuery.isEmpty || group.name.localizedCaseInsensitiveContains(quickQuery) || project.name.localizedCaseInsensitiveContains(quickQuery) {
-                            Button("\(project.name) / \(group.name)") {
+                            Button(AppLocalization.text("%@ / %@", project.name, displayWorktreeGroupName(group.name))) {
                                 model.selectProject(project.id)
                                 model.selectWorktreeGroup(group.id)
                                 model.showQuickSwitch = false
@@ -737,7 +750,7 @@ struct ContentView: View {
                     }
                     ForEach(project.repositories) { repository in
                         if repository.name.localizedCaseInsensitiveContains(quickQuery) {
-                            Button("仓库 · \(repository.name)") {
+                            Button(AppLocalization.text("Repository · %@", repository.name)) {
                                 model.selectProject(project.id)
                                 model.focusedRepositoryID = repository.id
                                 model.showQuickSwitch = false
@@ -753,6 +766,13 @@ struct ContentView: View {
     private func present(_ action: NameAction) {
         nameInput = ""
         nameAction = action
+    }
+
+    private func displayWorktreeGroupName(_ name: String) -> String {
+        switch name {
+        case "主目录", "默认": AppLocalization.text(name)
+        default: name
+        }
     }
 
     private func chooseRepositories(for groupID: UUID) {
@@ -825,7 +845,7 @@ private struct ImageDiffView: View {
     private func side(_ value: ImageDiffSide, title: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(title).font(.headline)
+                Text(LocalizedStringKey(title)).font(.headline)
                 Spacer()
                 if let count = value.byteCount {
                     Text(ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file))
@@ -840,7 +860,7 @@ private struct ImageDiffView: View {
                         .scaledToFit()
                         .frame(maxWidth: 260, maxHeight: 260)
                 } else {
-                    ContentUnavailableView(value.message ?? "此图片格式无法预览", systemImage: "photo")
+                    ContentUnavailableView(AppLocalization.text(value.message ?? "此图片格式无法预览"), systemImage: "photo")
                 }
             }
             .frame(maxWidth: .infinity)
@@ -860,7 +880,7 @@ private struct NameSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(title).font(.title2.bold())
+            Text(LocalizedStringKey(title)).font(.title2.bold())
             TextField("名称", text: $name)
                 .onSubmit { if !name.trimmingCharacters(in: .whitespaces).isEmpty { onSave(name) } }
             HStack {
@@ -897,7 +917,7 @@ private struct DetailPaneView: View {
             HStack {
                 if state.selectedFile != nil {
                     Picker("Diff", selection: $state.diffMode) {
-                        ForEach(DiffMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
+                        ForEach(DiffMode.allCases) { mode in Text(AppLocalization.text(mode.rawValue)).tag(mode) }
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 240)
@@ -905,7 +925,7 @@ private struct DetailPaneView: View {
                 } else if let commit = state.selectedCommit {
                     Text(commit.subject).font(.headline).lineLimit(1)
                 } else {
-                    Text("选择文件或提交").foregroundStyle(.secondary)
+                    Text(AppLocalization.text("选择文件或提交")).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
                 if state.selectedFile != nil || state.selectedCommit != nil {
@@ -950,7 +970,7 @@ private struct DetailPaneView: View {
     private var rawDetail: some View {
         ScrollViewReader { proxy in
             ScrollView([.vertical, .horizontal]) {
-                Text(state.detail.isEmpty ? "选择左侧项目查看详情。" : state.detail)
+                Text(state.detail.isEmpty ? AppLocalization.text("选择左侧项目查看详情。") : state.detail)
                     .font(.system(size: 12, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -963,7 +983,7 @@ private struct DetailPaneView: View {
                 proxy.scrollTo("diff-content", anchor: .topLeading)
             }
             .onChange(of: state.detail) { _, _ in
-                guard resetDetailScrollOnLoad, state.detail != "正在读取…" else { return }
+                guard resetDetailScrollOnLoad, state.detail != AppLocalization.text("正在读取…") else { return }
                 proxy.scrollTo("diff-content", anchor: .topLeading)
                 resetDetailScrollOnLoad = false
             }
@@ -1005,7 +1025,7 @@ private struct ChangedFileRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 7) {
-            Text(file.changeKind.rawValue)
+            Text(AppLocalization.text(file.changeKind.rawValue))
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(color)
                 .frame(width: 22, height: 20)
@@ -1021,20 +1041,20 @@ private struct ChangedFileRow: View {
                     if file.hasStaged && file.changeKind != .conflict {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 10)).foregroundStyle(.secondary)
-                            .help(file.hasUnstaged ? "已暂存，另有未暂存修改" : "已暂存")
+                            .help(AppLocalization.text(file.hasUnstaged ? "已暂存，另有未暂存修改" : "已暂存"))
                     }
                     Group {
                         if let stats = file.stats {
                             if stats.isBinary {
-                                Text("二进制").foregroundStyle(.secondary)
+                                Text(AppLocalization.text("二进制")).foregroundStyle(.secondary)
                             } else {
                                 HStack(spacing: 5) {
                                     Text("+\(stats.additions)").foregroundStyle(.green)
                                     Text("−\(stats.deletions)").foregroundStyle(.red)
                                 }
-                                .help("已暂存和未暂存修改的增删行数合计")
+                                .help(AppLocalization.text("已暂存和未暂存修改的增删行数合计"))
                             }
-                        } else { Text("—").foregroundStyle(.secondary).help("暂无行数统计") }
+                        } else { Text("—").foregroundStyle(.secondary).help(AppLocalization.text("暂无行数统计")) }
                     }
                     .font(.system(size: 10, design: .monospaced))
                     .fixedSize()
@@ -1052,6 +1072,6 @@ private struct ChangedFileRow: View {
             if selected { Rectangle().fill(WorkbenchStyle.accent).frame(width: 3) }
         }
         .contentShape(Rectangle())
-        .help("\(file.changeKind.title) · \(file.path)")
+        .help(AppLocalization.text("%@ · %@", file.changeKind.title, file.path))
     }
 }

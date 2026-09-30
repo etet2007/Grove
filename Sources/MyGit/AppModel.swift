@@ -132,7 +132,7 @@ private struct HistoryCacheKey: Hashable {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try encoder.encode(Configuration(projects: projects, selectedProjectID: selectedProjectID,
                                              selectedWorktreeGroupID: selectedWorktreeGroupID)).write(to: configURL, options: .atomic)
-        } catch { self.error = "无法保存配置：\(error.localizedDescription)" }
+        } catch { self.error = AppLocalization.text("无法保存配置：%@", error.localizedDescription) }
     }
 
     func addProject(name: String) {
@@ -162,7 +162,7 @@ private struct HistoryCacheKey: Hashable {
                 guard !projects[index].repositories.contains(where: { $0.path == canonical }) else { continue }
                 let name = URL(fileURLWithPath: canonical).lastPathComponent
                 projects[index].repositories.append(Repository(name: name, path: canonical, groupID: groupID))
-            } catch { self.error = "无法添加 \(path)：\(error.localizedDescription)" }
+            } catch { self.error = AppLocalization.text("无法添加 %@：%@", path, error.localizedDescription) }
         }
         save(); refresh()
     }
@@ -178,7 +178,7 @@ private struct HistoryCacheKey: Hashable {
     func removeRepositoryGroup(_ id: UUID) {
         guard let index = projectIndex else { return }
         guard !projects[index].repositories.contains(where: { $0.groupID == id }) else {
-            error = "请先移动或移除这个仓库组中的仓库。"
+            error = AppLocalization.text("请先移动或移除这个仓库组中的仓库。")
             return
         }
         projects[index].groups.removeAll { $0.id == id }
@@ -307,7 +307,7 @@ private struct HistoryCacheKey: Hashable {
         for scan in scans {
             for worktree in scan.worktrees where worktree.isDetached && !worktree.isPrimary {
                 var group = existingDetached.first(where: { $0.selections[scan.repository.id] == worktree.path })
-                    ?? WorktreeGroup(name: "分离 HEAD · \(scan.repository.name) · \(worktree.head.prefix(7))", branch: nil)
+                    ?? WorktreeGroup(name: AppLocalization.text("Detached HEAD · %@ · %@", scan.repository.name, String(worktree.head.prefix(7))), branch: nil)
                 group.isTransient = true
                 group.selections[scan.repository.id] = worktree.path
                 projects[index].worktreeGroups.append(group)
@@ -315,7 +315,7 @@ private struct HistoryCacheKey: Hashable {
         }
         if !projects[index].worktreeGroups.contains(where: { $0.id == selectedWorktreeGroupID }) {
             selectedWorktreeGroupID = projects[index].worktreeGroups.first?.id
-            if !oldGroups.isEmpty { notice = "原工作树组已不可用，已切换到主目录。" }
+            if !oldGroups.isEmpty { notice = AppLocalization.text("原工作树组已不可用，已切换到主目录。") }
         }
         guard let group = selectedGroup else { isRefreshing = false; return }
         var selections: [(Repository, [Worktree], Worktree?, Bool, String?)] = []
@@ -326,7 +326,7 @@ private struct HistoryCacheKey: Hashable {
                 if let groupIndex = projects[index].worktreeGroups.firstIndex(where: { $0.id == group.id }) {
                     projects[index].worktreeGroups[groupIndex].selections.removeValue(forKey: scan.repository.id)
                 }
-                notice = "\(scan.repository.name) 的已选 worktree 不可用，已回退到主目录。"
+                notice = AppLocalization.text("The selected worktree for %@ is unavailable. Fell back to the primary checkout.", scan.repository.name)
             }
             let selected = manual ?? WorktreeSelection.resolve(group: group, repositoryID: scan.repository.id, worktrees: scan.worktrees)
             let fallback = !group.isPrimary && selected?.isPrimary == true
@@ -339,7 +339,7 @@ private struct HistoryCacheKey: Hashable {
             let snapshots = selections.map { repository, worktrees, selected, fallback, scanError -> RepositorySnapshot in
                 guard let selected else {
                     return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: nil,
-                                              isFallback: false, files: [], error: scanError ?? "没有有效的检出目录",
+                                              isFallback: false, files: [], error: scanError ?? AppLocalization.text("没有有效的检出目录"),
                                               mergeRequestURL: nil)
                 }
                 let mergeRequestURL = selected.branch.flatMap {
@@ -399,7 +399,11 @@ private struct HistoryCacheKey: Hashable {
         let mode = state.diffMode
         let snapshot = snapshots.first { $0.repository.id == (file?.repositoryID ?? commit?.repositoryID) }
         guard let path = snapshot?.selected?.path else { state.clear(); return }
-        if showLoading { state.detail = "正在读取…"; state.imagePreview = nil; state.commitPatch = nil }
+        if showLoading {
+            state.detail = AppLocalization.text("正在读取…")
+            state.imagePreview = nil
+            state.commitPatch = nil
+        }
         Task.detached(priority: .utility) {
             let output: String
             let preview = file.flatMap { GitClient.imagePreview(for: $0, in: path, mode: mode) }
