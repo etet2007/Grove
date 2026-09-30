@@ -708,6 +708,10 @@ struct ContentView: View {
             Button("加载更早提交") { model.loadMoreCommits() }
                 .frame(maxWidth: .infinity)
         }
+        // A new timeline must not inherit the previous checkout group's native
+        // row anchors, especially when cached histories share commit IDs.
+        .id(model.selectedWorktreeGroupID)
+        .id(model.selectedProjectID)
         .frame(minWidth: 280, idealWidth: 340)
         .scrollContentBackground(.hidden)
         .background(WorkbenchStyle.background)
