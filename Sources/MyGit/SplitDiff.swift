@@ -1,16 +1,16 @@
 import Foundation
 
-enum DiffLineKind {
+enum DiffLineKind: Equatable {
     case context, removed, added, heading, hunk
 }
 
-struct DiffLine {
+struct DiffLine: Equatable {
     let number: Int?
     let text: String
     let kind: DiffLineKind
 }
 
-struct DiffRow: Identifiable {
+struct DiffRow: Identifiable, Equatable {
     let id: Int
     let old: DiffLine?
     let new: DiffLine?

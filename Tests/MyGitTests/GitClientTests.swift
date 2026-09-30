@@ -35,10 +35,44 @@ final class GitClientTests: XCTestCase {
         let changed = try XCTUnwrap(files.first(where: { $0.path == "tracked.txt" }))
         XCTAssertTrue(changed.hasStaged)
         XCTAssertTrue(changed.hasUnstaged)
+        XCTAssertEqual(changed.changeKind, .modified)
+        XCTAssertEqual(changed.stats?.additions, 2)
+        XCTAssertEqual(changed.stats?.deletions, 0)
+        let untracked = try XCTUnwrap(files.first(where: { $0.path == "new.txt" }))
+        XCTAssertEqual(untracked.changeKind, .added)
+        XCTAssertEqual(untracked.stats?.additions, 1)
         XCTAssertTrue(files.contains(where: { $0.path == "new.txt" && $0.isUntracked }))
         XCTAssertTrue(try GitClient.diff(for: changed, in: feature.path, mode: .unstaged).contains("+third"))
         XCTAssertTrue(try GitClient.diff(for: changed, in: feature.path, mode: .staged).contains("+second"))
         XCTAssertEqual(try GitClient.commits(in: feature.path, repositoryID: UUID(), limit: 10).first?.subject, "initial")
+    }
+
+    func testNumstatHandlesRenameTabsAndBinaryFiles() {
+        let data = Data("3\t2\tfile\twith-tab.txt\0".utf8) +
+            Data("0\t0\t\0old name.txt\0new name.txt\0-\t-\tasset.png\0".utf8)
+        let stats = GitClient.parseNumstat(data)
+        XCTAssertEqual(stats["file\twith-tab.txt"], FileChangeStats(additions: 3, deletions: 2))
+        XCTAssertEqual(stats["new name.txt"], FileChangeStats(additions: 0, deletions: 0))
+        XCTAssertNil(stats["old name.txt"])
+        XCTAssertEqual(stats["asset.png"]?.isBinary, true)
+    }
+
+    func testChangeBadgesDescribeStatusInsteadOfRepository() {
+        func kind(_ status: String) -> FileChangeKind {
+            let chars = Array(status)
+            return ChangedFile(repositoryID: UUID(), path: "file", indexStatus: chars[0],
+                               worktreeStatus: chars[1], isUntracked: status == "??").changeKind
+        }
+        XCTAssertEqual(kind("??"), .added)
+        XCTAssertEqual(kind("A "), .added)
+        XCTAssertEqual(kind(" M"), .modified)
+        XCTAssertEqual(kind("MM"), .modified)
+        XCTAssertEqual(kind(" D"), .deleted)
+        XCTAssertEqual(kind("AD"), .deleted)
+        XCTAssertEqual(kind("R "), .renamed)
+        for status in ["DD", "AU", "UD", "UA", "DU", "AA", "UU"] {
+            XCTAssertEqual(kind(status), .conflict)
+        }
     }
 
     func testGroupSelectsMatchingBranchThenPrimaryUnlessOverridden() {

@@ -45,6 +45,26 @@ struct Worktree: Identifiable, Hashable {
     let isDetached: Bool
 }
 
+enum FileChangeKind: String {
+    case added = "A", modified = "M", deleted = "D", renamed = "R", copied = "C", conflict = "!C"
+    var title: String {
+        switch self {
+        case .added: "新增"
+        case .modified: "修改"
+        case .deleted: "删除"
+        case .renamed: "重命名"
+        case .copied: "复制"
+        case .conflict: "冲突"
+        }
+    }
+}
+
+struct FileChangeStats: Hashable {
+    let additions: Int
+    let deletions: Int
+    var isBinary = false
+}
+
 struct ChangedFile: Identifiable, Hashable {
     var id: String { repositoryID.uuidString + ":" + path }
     let repositoryID: UUID
@@ -52,6 +72,17 @@ struct ChangedFile: Identifiable, Hashable {
     let indexStatus: Character
     let worktreeStatus: Character
     let isUntracked: Bool
+    var stats: FileChangeStats? = nil
+
+    var changeKind: FileChangeKind {
+        let status = String(indexStatus) + String(worktreeStatus)
+        if ["DD", "AU", "UD", "UA", "DU", "AA", "UU"].contains(status) { return .conflict }
+        if indexStatus == "D" || worktreeStatus == "D" { return .deleted }
+        if isUntracked || indexStatus == "A" || worktreeStatus == "A" { return .added }
+        if indexStatus == "R" || worktreeStatus == "R" { return .renamed }
+        if indexStatus == "C" || worktreeStatus == "C" { return .copied }
+        return .modified
+    }
 
     var hasStaged: Bool { indexStatus != " " && indexStatus != "?" }
     var hasUnstaged: Bool { worktreeStatus != " " || isUntracked }

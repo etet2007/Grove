@@ -34,9 +34,37 @@ final class AppModelCacheTests: XCTestCase {
         XCTAssertEqual(model.snapshots.first?.files.count, 1)
         XCTAssertEqual(model.commits.first?.subject, "initial")
 
+        let file = try XCTUnwrap(model.snapshots.first?.files.first)
+        let commit = try XCTUnwrap(model.commits.first)
+        model.selectFile(file)
+        model.diffMode = .all
+        model.loadDetail()
+        try await waitForDetail(model.detailStates[0])
+        let fileDiff = model.detail
+        model.activeTab = 1
+        XCTAssertNil(model.selectedFile)
+        XCTAssertTrue(model.detail.isEmpty)
+        model.selectCommit(commit)
+        try await waitForDetail(model.detailStates[1])
+        let commitDiff = model.detail
+        XCTAssertNotNil(model.detailStates[1].commitPatch)
+        model.activeTab = 0
+        XCTAssertEqual(model.selectedFile, file)
+        XCTAssertNil(model.selectedCommit)
+        XCTAssertEqual(model.diffMode, .all)
+        XCTAssertEqual(model.detail, fileDiff)
+        model.activeTab = 1
+        XCTAssertEqual(model.selectedCommit, commit)
+        XCTAssertNil(model.selectedFile)
+        XCTAssertEqual(model.detail, commitDiff)
+        model.refresh()
+        try await waitForRefresh(model)
+        XCTAssertEqual(model.detail, commitDiff, "Refreshing changes must not replace the commit diff")
+
         model.selectWorktreeGroup(secondary.id)
         try await waitForRefresh(model)
         XCTAssertEqual(model.snapshots.first?.selected?.path, featurePath)
+        XCTAssertTrue(model.detailStates.allSatisfy { $0.selectedFile == nil && $0.selectedCommit == nil })
         XCTAssertEqual(model.snapshots.first?.files.count, 0)
         try "new\n".write(to: main.appendingPathComponent("new.txt"), atomically: true, encoding: .utf8)
 
@@ -72,6 +100,16 @@ final class AppModelCacheTests: XCTestCase {
         try await waitForRefresh(model)
         XCTAssertEqual(model.snapshots.first?.selected?.path, mainPath)
         XCTAssertEqual(model.commits.first?.subject, "initial")
+    }
+
+    @MainActor
+    private func waitForDetail(_ state: DetailState) async throws {
+        let deadline = Date().addingTimeInterval(10)
+        while (state.detail.isEmpty || state.detail == "正在读取…") && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(state.detail.isEmpty)
+        XCTAssertNotEqual(state.detail, "正在读取…")
     }
 
     @MainActor

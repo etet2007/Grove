@@ -5,33 +5,27 @@ struct SplitDiffView: View {
     let oldTitle: String
     let newTitle: String
     let resetID: String
+    var singleSide: DiffSide? = nil
     @State private var horizontalSync = HorizontalScrollSync()
 
     var body: some View {
         GeometryReader { geometry in
-            let paneWidth = max(200, (geometry.size.width - 1) / 2)
+            let paneWidth = singleSide == nil ? max(200, (geometry.size.width - 1) / 2) : geometry.size.width
             let contentWidth = max(paneWidth, min(16_000, CGFloat(diff.rows.flatMap { [$0.old, $0.new] }.compactMap { $0?.text }.map { text in
                 text.unicodeScalars.reduce(0) { $0 + ($1.value > 127 ? 2 : 1) }
             }.max() ?? 0) * 7.25 + 72))
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
-                    title(oldTitle).frame(width: paneWidth)
-                    Divider()
-                    title(newTitle).frame(width: paneWidth)
+                    if singleSide != .new { title(oldTitle).frame(width: paneWidth) }
+                    if singleSide == nil { Divider() }
+                    if singleSide != .old { title(newTitle).frame(width: paneWidth) }
                 }
                 .frame(height: 34)
                 Divider()
-                ScrollViewReader { proxy in
-                    ScrollView(.vertical) {
-                        HStack(alignment: .top, spacing: 0) {
-                            pane(\.old, side: .old, width: paneWidth, contentWidth: contentWidth)
-                            Rectangle().fill(.separator).frame(width: 1)
-                            pane(\.new, side: .new, width: paneWidth, contentWidth: contentWidth)
-                        }
-                        .id("split-top")
-                    }
-                    .onAppear { proxy.scrollTo("split-top", anchor: .top) }
-                    .onChange(of: resetID) { _, _ in proxy.scrollTo("split-top", anchor: .top) }
+                HStack(alignment: .top, spacing: 0) {
+                    if singleSide != .new { pane(\.old, side: .old, width: paneWidth, contentWidth: contentWidth) }
+                    if singleSide == nil { Rectangle().fill(.separator).frame(width: 1) }
+                    if singleSide != .old { pane(\.new, side: .new, width: paneWidth, contentWidth: contentWidth) }
                 }
             }
         }
@@ -48,18 +42,18 @@ struct SplitDiffView: View {
     private func pane(_ lines: KeyPath<DiffRow, DiffLine?>, side: DiffSide,
                       width: CGFloat, contentWidth: CGFloat) -> some View {
         SynchronizedHorizontalScrollView(
-            content: DiffRowsColumn(rows: diff.rows, lines: lines, width: contentWidth),
+            rows: diff.rows,
+            lines: lines,
             contentWidth: contentWidth,
-            contentHeight: CGFloat(diff.rows.count) * 21,
             side: side,
             sync: horizontalSync
         )
-        .frame(width: width, height: CGFloat(diff.rows.count) * 21 + 14)
+        .frame(width: width)
     }
 }
 
 private struct DiffRowsColumn: View {
-    let rows: [DiffRow]
+    let rows: ArraySlice<DiffRow>
     let lines: KeyPath<DiffRow, DiffLine?>
     let width: CGFloat
 
@@ -121,18 +115,72 @@ final class HorizontalScrollSync {
         guard let target = scrollViews[otherSide]?.value else { return }
         let maximum = max(0, (target.documentView?.frame.width ?? 0) - target.contentView.bounds.width)
         let x = min(max(0, source.contentView.bounds.origin.x), maximum)
-        guard abs(target.contentView.bounds.origin.x - x) > 0.5 else { return }
+        let maximumY = max(0, (target.documentView?.frame.height ?? 0) - target.contentView.bounds.height)
+        let y = min(max(0, source.contentView.bounds.origin.y), maximumY)
+        guard abs(target.contentView.bounds.origin.x - x) > 0.5 ||
+              abs(target.contentView.bounds.origin.y - y) > 0.5 else { return }
         isSynchronizing = true
-        target.contentView.scroll(to: NSPoint(x: x, y: target.contentView.bounds.origin.y))
+        target.contentView.scroll(to: NSPoint(x: x, y: y))
         target.reflectScrolledClipView(target.contentView)
         isSynchronizing = false
     }
 }
 
+// The document retains the full scroll extent, but hosts only the visible rows
+// and a small buffer. A LazyVStack inside a full-height NSHostingView would still
+// see the entire document as its viewport.
+final class VirtualizedDiffDocumentView: NSView {
+    static let rowHeight: CGFloat = 21
+    private let lines: KeyPath<DiffRow, DiffLine?>
+    private var rows: [DiffRow] = []
+    private var columnWidth: CGFloat = 0
+    private let host: NSHostingView<DiffRowsColumn>
+    private(set) var renderedRowRange = 0..<0
+
+    override var isFlipped: Bool { true }
+
+    init(lines: KeyPath<DiffRow, DiffLine?>) {
+        self.lines = lines
+        host = NSHostingView(rootView: DiffRowsColumn(rows: [], lines: lines, width: 0))
+        super.init(frame: .zero)
+        host.sizingOptions = []
+        addSubview(host)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func setContent(rows: [DiffRow], width: CGFloat) {
+        let changed = self.rows != rows || columnWidth != width
+        guard changed else { return }
+        self.rows = rows
+        columnWidth = width
+        frame.size = NSSize(width: width, height: CGFloat(rows.count) * Self.rowHeight)
+        updateVisibleRows(force: true)
+    }
+
+    override func layout() {
+        super.layout()
+        updateVisibleRows()
+    }
+
+    func updateVisibleRows(force: Bool = false) {
+        guard let scrollView = enclosingScrollView else { return }
+        let viewport = scrollView.documentVisibleRect
+        let first = min(rows.count, max(0, Int(floor(viewport.minY / Self.rowHeight)) - 8))
+        let last = min(rows.count, max(first, Int(ceil(viewport.maxY / Self.rowHeight)) + 8))
+        let range = first..<last
+        guard force || range != renderedRowRange else { return }
+        renderedRowRange = range
+        host.rootView = DiffRowsColumn(rows: rows[range], lines: lines, width: columnWidth)
+        host.frame = NSRect(x: 0, y: CGFloat(first) * Self.rowHeight,
+                            width: columnWidth, height: CGFloat(range.count) * Self.rowHeight)
+    }
+}
+
 private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
-    let content: DiffRowsColumn
+    let rows: [DiffRow]
+    let lines: KeyPath<DiffRow, DiffLine?>
     let contentWidth: CGFloat
-    let contentHeight: CGFloat
     let side: DiffSide
     let sync: HorizontalScrollSync
 
@@ -141,23 +189,21 @@ private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
         scrollView.hasHorizontalScroller = true
-        scrollView.hasVerticalScroller = false
+        scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.horizontalScrollElasticity = .none
         scrollView.verticalScrollElasticity = .none
         scrollView.contentView.postsBoundsChangedNotifications = true
-        let host = NSHostingView(rootView: content)
-        host.frame = NSRect(x: 0, y: 0, width: contentWidth, height: contentHeight)
-        scrollView.documentView = host
+        scrollView.documentView = VirtualizedDiffDocumentView(lines: lines)
         sync.register(scrollView, for: side)
         context.coordinator.observe(scrollView)
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let host = scrollView.documentView as? NSHostingView<DiffRowsColumn> else { return }
-        host.rootView = content
-        host.frame = NSRect(x: 0, y: 0, width: contentWidth, height: contentHeight)
+        guard let document = scrollView.documentView as? VirtualizedDiffDocumentView else { return }
+        document.setContent(rows: rows, width: contentWidth)
+        document.updateVisibleRows()
     }
 
     final class Coordinator {
@@ -177,6 +223,7 @@ private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
                 queue: nil
             ) { [weak self, weak scrollView] _ in
                 guard let self, let scrollView else { return }
+                (scrollView.documentView as? VirtualizedDiffDocumentView)?.updateVisibleRows()
                 self.sync.didScroll(scrollView, side: self.side)
             }
         }

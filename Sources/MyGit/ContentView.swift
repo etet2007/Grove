@@ -152,9 +152,45 @@ private enum NameAction: String, Identifiable {
     }
 }
 
-private enum DetailLayout: String, CaseIterable, Identifiable {
-    case split = "并排"
-    case patch = "原始"
+private struct WorkbenchTabButton: View {
+    let title: String
+    let icon: String
+    var count: Int? = nil
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 12))
+                    .foregroundStyle(selected ? WorkbenchStyle.accent : WorkbenchStyle.muted)
+                Text(title)
+                if let count {
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(selected ? WorkbenchStyle.accent : WorkbenchStyle.muted)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(selected ? WorkbenchStyle.accent.opacity(0.15) : WorkbenchStyle.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+            }
+            .font(.system(size: 12, weight: selected ? .semibold : .regular))
+            .foregroundStyle(selected ? Color.primary : WorkbenchStyle.muted)
+            .padding(.horizontal, 9)
+            .frame(height: 26)
+            .background(selected ? WorkbenchStyle.surface : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+}
+
+enum DetailLayout: String, CaseIterable, Identifiable {
+    case split = "并排模式"
+    case patch = "统一内联"
     var id: String { rawValue }
 }
 
@@ -164,8 +200,6 @@ struct ContentView: View {
     @State private var nameAction: NameAction?
     @State private var nameInput = ""
     @State private var quickQuery = ""
-    @State private var detailLayout: DetailLayout = .split
-    @State private var resetDetailScrollOnLoad = false
     @State private var showMergeRequestPicker = false
     @State private var collapsedRepositoryGroups: Set<UUID> = []
     @FocusState private var quickSearchFocused: Bool
@@ -593,32 +627,9 @@ struct ContentView: View {
     }
 
     private func contentTab(_ title: String, icon: String, count: Int?, index: Int) -> some View {
-        let selected = model.activeTab == index
-        return Button { model.activeTab = index } label: {
-            HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 12))
-                    .foregroundStyle(selected ? WorkbenchStyle.accent : WorkbenchStyle.muted)
-                Text(title)
-                if let count {
-                    Text("\(count)")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(selected ? WorkbenchStyle.accent : WorkbenchStyle.muted)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(selected ? WorkbenchStyle.accent.opacity(0.15) : WorkbenchStyle.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                }
-            }
-            .font(.system(size: 12, weight: selected ? .semibold : .regular))
-            .foregroundStyle(selected ? Color.primary : WorkbenchStyle.muted)
-            .padding(.horizontal, 9)
-            .frame(height: 26)
-            .background(selected ? WorkbenchStyle.surface : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 5))
+        WorkbenchTabButton(title: title, icon: icon, count: count, selected: model.activeTab == index) {
+            model.activeTab = index
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 
     private var changesList: some View {
@@ -632,26 +643,26 @@ struct ContentView: View {
                     } else {
                         ForEach(snapshot.files) { file in
                             Button { model.selectFile(file) } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "doc.text").foregroundStyle(WorkbenchStyle.repositoryColor(snapshot.repository.name))
-                                    Text(file.path).lineLimit(1)
-                                    Spacer(minLength: 0)
-                                    Text(file.statusLabel).font(.caption2).foregroundStyle(.secondary)
-                                }
-                                .font(.system(size: 12, weight: model.selectedFile == file ? .semibold : .regular))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
+                                ChangedFileRow(file: file, selected: model.selectedFile?.id == file.id)
                             }
                             .buttonStyle(.plain)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
                         }
                     }
                 } header: {
                     HStack {
-                        Text(snapshot.repository.name)
+                        Text(snapshot.repository.name).lineLimit(1)
                         if snapshot.isFallback { Text("共享主目录").foregroundStyle(.orange) }
                         if let selected = snapshot.selected {
-                            Text(selected.branch ?? "分离 HEAD").foregroundStyle(.secondary)
+                            Text(selected.branch ?? "分离 HEAD").foregroundStyle(.secondary).lineLimit(1)
                         }
+                        Spacer(minLength: 4)
+                        let conflicts = snapshot.files.filter { $0.changeKind == .conflict }.count
+                        if conflicts > 0 {
+                            Text("\(conflicts) 冲突").foregroundStyle(.red).fixedSize()
+                        }
+                        Text("\(snapshot.files.count) 变动").foregroundStyle(.secondary).fixedSize()
                     }
                 }
             }
@@ -690,90 +701,15 @@ struct ContentView: View {
     }
 
     private var detailPane: some View {
-        let splitDiff = SplitDiff.parse(model.detail)
-        return VStack(spacing: 0) {
-            HStack {
-                if let file = model.selectedFile {
-                    Text(file.path).font(.headline).lineLimit(1)
-                    Spacer()
-                    Picker("Diff", selection: $model.diffMode) {
-                        ForEach(DiffMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 240)
-                    .onChange(of: model.diffMode) { _, _ in model.loadDetail() }
-                } else if let commit = model.selectedCommit {
-                    Text(commit.subject).font(.headline).lineLimit(1)
-                } else {
-                    Text("选择文件或提交").foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                if model.selectedFile != nil || model.selectedCommit != nil {
-                    Picker("视图", selection: $detailLayout) {
-                        ForEach(DetailLayout.allCases) { layout in Text(layout.rawValue).tag(layout) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 150)
-                }
-            }
-            .padding(12)
-            Divider()
-            if detailLayout == .split, let preview = model.imagePreview {
-                ImageDiffView(preview: preview, oldTitle: oldDiffTitle, newTitle: newDiffTitle)
-                    .id(detailScrollIdentity)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if detailLayout == .split && splitDiff.hasChanges {
-                SplitDiffView(diff: splitDiff, oldTitle: oldDiffTitle, newTitle: newDiffTitle,
-                              resetID: detailScrollIdentity)
-                    .id(detailScrollIdentity)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                rawDetail
+        ZStack {
+            ForEach(0..<2) { tab in
+                DetailPaneView(state: model.detailStates[tab], tab: tab)
+                    .opacity(model.activeTab == tab ? 1 : 0)
+                    .allowsHitTesting(model.activeTab == tab)
+                    .accessibilityHidden(model.activeTab != tab)
             }
         }
         .frame(minWidth: 430)
-        .background(WorkbenchStyle.background)
-    }
-
-    private var rawDetail: some View {
-        ScrollViewReader { proxy in
-            ScrollView([.vertical, .horizontal]) {
-                Text(model.detail.isEmpty ? "选择左侧项目查看详情。" : model.detail)
-                    .font(.system(size: 12, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(16)
-                    .id("diff-content")
-            }
-            .onAppear { proxy.scrollTo("diff-content", anchor: .topLeading) }
-            .onChange(of: detailScrollIdentity) { _, _ in
-                resetDetailScrollOnLoad = true
-                proxy.scrollTo("diff-content", anchor: .topLeading)
-            }
-            .onChange(of: model.detail) { _, _ in
-                guard resetDetailScrollOnLoad, model.detail != "正在读取…" else { return }
-                proxy.scrollTo("diff-content", anchor: .topLeading)
-                resetDetailScrollOnLoad = false
-            }
-        }
-    }
-
-    private var oldDiffTitle: String {
-        if model.selectedCommit != nil { return "父提交" }
-        if model.selectedFile?.isUntracked == true { return "空文件" }
-        return model.diffMode == .unstaged ? "暂存区" : "HEAD"
-    }
-
-    private var newDiffTitle: String {
-        if model.selectedCommit != nil { return "提交后" }
-        return model.diffMode == .staged ? "暂存区" : "工作区"
-    }
-
-    private var detailScrollIdentity: String {
-        if let file = model.selectedFile { return "file:\(file.id):\(model.diffMode.rawValue)" }
-        if let commit = model.selectedCommit { return "commit:\(commit.id)" }
-        return "empty"
     }
 
     private var quickSwitch: some View {
@@ -935,5 +871,187 @@ private struct NameSheet: View {
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
+    }
+}
+
+// Keep both panes mounted so their file selection, layout and native scroll
+// positions survive tab switches without reloading the selected diff.
+private struct DetailPaneView: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject var state: DetailState
+    let tab: Int
+    @State private var detailLayout: DetailLayout = .split
+    @State private var resetDetailScrollOnLoad = false
+
+    var body: some View { detailPane }
+
+    private var detailPane: some View {
+        let splitDiff = state.selectedCommit == nil ? SplitDiff.parse(state.detail) : SplitDiff(rows: [], hasChanges: false)
+        return VStack(spacing: 0) {
+            if let file = state.selectedFile {
+                Text(file.path).font(.headline).lineLimit(1).truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12).padding(.top, 12)
+                    .help(file.path)
+            }
+            HStack {
+                if state.selectedFile != nil {
+                    Picker("Diff", selection: $state.diffMode) {
+                        ForEach(DiffMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 240)
+                    .onChange(of: state.diffMode) { _, _ in model.loadDetail(tab: tab) }
+                } else if let commit = state.selectedCommit {
+                    Text(commit.subject).font(.headline).lineLimit(1)
+                } else {
+                    Text("选择文件或提交").foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                if state.selectedFile != nil || state.selectedCommit != nil {
+                    HStack(spacing: 2) {
+                        ForEach(DetailLayout.allCases) { layout in
+                            WorkbenchTabButton(title: layout.rawValue,
+                                               icon: layout == .split ? "rectangle.split.1x2" : "rectangle.split.2x1",
+                                               selected: detailLayout == layout) {
+                                detailLayout = layout
+                            }
+                        }
+                    }
+                    .padding(2)
+                    .background(WorkbenchStyle.background)
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(WorkbenchStyle.border))
+                    .fixedSize()
+                }
+            }
+            .padding(12)
+            Divider()
+            if let commit = state.selectedCommit, let patch = state.commitPatch, !patch.files.isEmpty {
+                CommitDetailView(patch: patch, layout: detailLayout)
+                    .id(commit.id)
+            } else if detailLayout == .split, let preview = state.imagePreview {
+                ImageDiffView(preview: preview, oldTitle: oldDiffTitle, newTitle: newDiffTitle)
+                    .id(detailScrollIdentity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if detailLayout == .split && splitDiff.hasChanges {
+                SplitDiffView(diff: splitDiff, oldTitle: oldDiffTitle, newTitle: newDiffTitle,
+                              resetID: detailScrollIdentity)
+                    .id(detailScrollIdentity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                rawDetail
+            }
+        }
+        .frame(minWidth: 430)
+        .background(WorkbenchStyle.background)
+    }
+
+    private var rawDetail: some View {
+        ScrollViewReader { proxy in
+            ScrollView([.vertical, .horizontal]) {
+                Text(state.detail.isEmpty ? "选择左侧项目查看详情。" : state.detail)
+                    .font(.system(size: 12, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(16)
+                    .id("diff-content")
+            }
+            .onAppear { proxy.scrollTo("diff-content", anchor: .topLeading) }
+            .onChange(of: detailScrollIdentity) { _, _ in
+                resetDetailScrollOnLoad = true
+                proxy.scrollTo("diff-content", anchor: .topLeading)
+            }
+            .onChange(of: state.detail) { _, _ in
+                guard resetDetailScrollOnLoad, state.detail != "正在读取…" else { return }
+                proxy.scrollTo("diff-content", anchor: .topLeading)
+                resetDetailScrollOnLoad = false
+            }
+        }
+    }
+
+    private var oldDiffTitle: String {
+        if state.selectedCommit != nil { return "父提交" }
+        if state.selectedFile?.isUntracked == true { return "空文件" }
+        return state.diffMode == .unstaged ? "暂存区" : "HEAD"
+    }
+
+    private var newDiffTitle: String {
+        if state.selectedCommit != nil { return "提交后" }
+        return state.diffMode == .staged ? "暂存区" : "工作区"
+    }
+
+    private var detailScrollIdentity: String {
+        if let file = state.selectedFile { return "file:\(file.id):\(state.diffMode.rawValue)" }
+        if let commit = state.selectedCommit { return "commit:\(commit.id)" }
+        return "empty"
+    }
+
+}
+
+private struct ChangedFileRow: View {
+    let file: ChangedFile
+    let selected: Bool
+
+    private var color: Color {
+        switch file.changeKind {
+        case .added: .green
+        case .modified: .purple
+        case .deleted: .red
+        case .renamed, .copied: .cyan
+        case .conflict: .red
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 7) {
+            Text(file.changeKind.rawValue)
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundStyle(color)
+                .frame(width: 22, height: 20)
+                .background(color.opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text((file.path as NSString).lastPathComponent)
+                        .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                        .foregroundStyle(selected ? WorkbenchStyle.accent : Color.primary)
+                        .strikethrough(file.changeKind == .deleted)
+                        .lineLimit(1).truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if file.hasStaged && file.changeKind != .conflict {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .help(file.hasUnstaged ? "已暂存，另有未暂存修改" : "已暂存")
+                    }
+                    Group {
+                        if let stats = file.stats {
+                            if stats.isBinary {
+                                Text("二进制").foregroundStyle(.secondary)
+                            } else {
+                                HStack(spacing: 5) {
+                                    Text("+\(stats.additions)").foregroundStyle(.green)
+                                    Text("−\(stats.deletions)").foregroundStyle(.red)
+                                }
+                                .help("已暂存和未暂存修改的增删行数合计")
+                            }
+                        } else { Text("—").foregroundStyle(.secondary).help("暂无行数统计") }
+                    }
+                    .font(.system(size: 10, design: .monospaced))
+                    .fixedSize()
+                }
+                Text((file.path as NSString).deletingLastPathComponent)
+                    .font(.system(size: 9)).foregroundStyle(WorkbenchStyle.muted)
+                    .lineLimit(1).truncationMode(.middle)
+                    .frame(height: 11, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(selected ? WorkbenchStyle.surface : Color.clear)
+        .overlay(alignment: .leading) {
+            if selected { Rectangle().fill(WorkbenchStyle.accent).frame(width: 3) }
+        }
+        .contentShape(Rectangle())
+        .help("\(file.changeKind.title) · \(file.path)")
     }
 }

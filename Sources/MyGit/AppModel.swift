@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 private struct WorktreeScan {
     let repository: Repository
@@ -27,17 +28,44 @@ private struct HistoryCacheKey: Hashable {
     let limit: Int
 }
 
+@MainActor final class DetailState: ObservableObject {
+    @Published var selectedFile: ChangedFile?
+    @Published var selectedCommit: Commit?
+    @Published var diffMode: DiffMode = .unstaged
+    @Published var detail = ""
+    @Published var commitPatch: CommitPatch?
+    @Published var imagePreview: ImageDiffPreview?
+    var generation = 0
+
+    func clear() {
+        generation += 1
+        selectedFile = nil; selectedCommit = nil; detail = ""
+        commitPatch = nil; imagePreview = nil
+    }
+}
+
 @MainActor final class AppModel: ObservableObject {
     @Published private(set) var projects: [Project] = []
     @Published var selectedProjectID: UUID?
     @Published var selectedWorktreeGroupID: UUID?
     @Published private(set) var snapshots: [RepositorySnapshot] = []
     @Published private(set) var commits: [Commit] = []
-    @Published var selectedFile: ChangedFile?
-    @Published var selectedCommit: Commit?
-    @Published var diffMode: DiffMode = .unstaged
-    @Published private(set) var detail = ""
-    @Published private(set) var imagePreview: ImageDiffPreview?
+    let detailStates = [DetailState(), DetailState()]
+    private var detailState: DetailState { detailStates[activeTab] }
+    var selectedFile: ChangedFile? {
+        get { detailState.selectedFile }
+        set { detailState.selectedFile = newValue }
+    }
+    var selectedCommit: Commit? {
+        get { detailState.selectedCommit }
+        set { detailState.selectedCommit = newValue }
+    }
+    var diffMode: DiffMode {
+        get { detailState.diffMode }
+        set { detailState.diffMode = newValue }
+    }
+    var detail: String { detailState.detail }
+    private var detailObservers: [AnyCancellable] = []
     @Published private(set) var isRefreshing = false
     @Published var notice: String?
     @Published var error: String?
@@ -46,7 +74,6 @@ private struct HistoryCacheKey: Hashable {
     @Published var focusedRepositoryID: UUID?
 
     private var refreshGeneration = 0
-    private var detailGeneration = 0
     private var commitLimit = 30
     // Memory only: retain recent views without persisting repository contents.
     private var groupCache: [GroupCacheKey: GroupCacheEntry] = [:]
@@ -59,8 +86,7 @@ private struct HistoryCacheKey: Hashable {
     }
 
     private func restoreCachedView() {
-        detailGeneration += 1
-        selectedFile = nil; selectedCommit = nil; detail = ""; imagePreview = nil
+        detailStates.forEach { $0.clear() }
         if let key = currentCacheKey, var entry = groupCache[key] {
             entry.lastUsed = Date()
             groupCache[key] = entry
@@ -89,6 +115,9 @@ private struct HistoryCacheKey: Hashable {
             selectedProjectID = projects.first(where: { $0.id == config.selectedProjectID })?.id ?? projects.first?.id
             selectedWorktreeGroupID = selectedProject?.worktreeGroups.first(where: { $0.id == config.selectedWorktreeGroupID })?.id
                 ?? selectedProject?.worktreeGroups.first?.id
+        }
+        detailObservers = detailStates.map { state in
+            state.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         }
         refresh()
     }
@@ -227,7 +256,7 @@ private struct HistoryCacheKey: Hashable {
     func selectCommit(_ commit: Commit) {
         selectedCommit = commit
         selectedFile = nil
-        imagePreview = nil
+        detailState.imagePreview = nil
         loadDetail()
     }
 
@@ -350,22 +379,27 @@ private struct HistoryCacheKey: Hashable {
                 self.historyCache.merge(newHistory) { _, new in new }
                 self.cacheCurrentView()
                 self.isRefreshing = false
-                if let file = self.selectedFile, !snapshots.contains(where: { $0.files.contains(file) }) {
-                    self.selectedFile = nil; self.detail = ""; self.imagePreview = nil
-                } else if self.selectedFile != nil { self.loadDetail(showLoading: false) }
+                let changes = self.detailStates[0]
+                if let file = changes.selectedFile {
+                    if let current = snapshots.flatMap(\.files).first(where: { $0.id == file.id }) {
+                        if current != file { changes.selectedFile = current }
+                        self.loadDetail(showLoading: false, tab: 0)
+                    } else { changes.clear() }
+                }
             }
         }
     }
 
-    func loadDetail(showLoading: Bool = true) {
-        detailGeneration += 1
-        let generation = detailGeneration
-        let file = selectedFile
-        let commit = selectedCommit
-        let mode = diffMode
+    func loadDetail(showLoading: Bool = true, tab: Int? = nil) {
+        let state = detailStates[tab ?? activeTab]
+        state.generation += 1
+        let generation = state.generation
+        let file = state.selectedFile
+        let commit = state.selectedCommit
+        let mode = state.diffMode
         let snapshot = snapshots.first { $0.repository.id == (file?.repositoryID ?? commit?.repositoryID) }
-        guard let path = snapshot?.selected?.path else { detail = ""; imagePreview = nil; return }
-        if showLoading { detail = "正在读取…"; imagePreview = nil }
+        guard let path = snapshot?.selected?.path else { state.clear(); return }
+        if showLoading { state.detail = "正在读取…"; state.imagePreview = nil; state.commitPatch = nil }
         Task.detached(priority: .utility) {
             let output: String
             let preview = file.flatMap { GitClient.imagePreview(for: $0, in: path, mode: mode) }
@@ -374,10 +408,12 @@ private struct HistoryCacheKey: Hashable {
                 else if let commit { output = try GitClient.show(commit, in: path) }
                 else { output = "" }
             } catch { output = error.localizedDescription }
+            let patch = commit != nil ? CommitPatch.parse(output) : nil
             await MainActor.run {
-                guard self.detailGeneration == generation else { return }
-                if self.detail != output { self.detail = output }
-                self.imagePreview = preview
+                guard state.generation == generation else { return }
+                if state.detail != output { state.detail = output }
+                state.imagePreview = preview
+                state.commitPatch = patch
             }
         }
     }

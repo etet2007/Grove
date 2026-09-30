@@ -159,7 +159,53 @@ struct GitClient {
                                      indexStatus: indexStatus, worktreeStatus: worktreeStatus,
                                      isUntracked: indexStatus == "?" && worktreeStatus == "?"))
         }
+        // Summarize tracked changes in two batched reads, including unborn HEADs.
+        // Counts include both staged and unstaged edits, matching the status list.
+        let staged = (try? run(["diff", "--cached", "--numstat", "-z", "--no-ext-diff", "--find-renames"], in: worktree)) ?? Data()
+        let unstaged = (try? run(["diff", "--numstat", "-z", "--no-ext-diff", "--find-renames"], in: worktree)) ?? Data()
+        var stats = parseNumstat(staged)
+        for (path, value) in parseNumstat(unstaged) {
+            let previous = stats[path]
+            stats[path] = FileChangeStats(additions: (previous?.additions ?? 0) + value.additions,
+                                          deletions: (previous?.deletions ?? 0) + value.deletions,
+                                          isBinary: (previous?.isBinary ?? false) || value.isBinary)
+        }
+        for index in files.indices {
+            if files[index].isUntracked {
+                let url = URL(fileURLWithPath: worktree).appendingPathComponent(files[index].path)
+                if let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber,
+                   size.intValue <= 250_000, let data = try? Data(contentsOf: url) {
+                    if !data.contains(0), String(data: data, encoding: .utf8) != nil {
+                        let count = data.reduce(0) { $0 + ($1 == 10 ? 1 : 0) } + (data.isEmpty || data.last == 10 ? 0 : 1)
+                        files[index].stats = FileChangeStats(additions: count, deletions: 0)
+                    } else { files[index].stats = FileChangeStats(additions: 0, deletions: 0, isBinary: true) }
+                }
+            } else { files[index].stats = stats[files[index].path] }
+        }
         return files.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+    }
+
+    static func parseNumstat(_ data: Data) -> [String: FileChangeStats] {
+        let records = String(decoding: data, as: UTF8.self).components(separatedBy: "\0")
+        var result: [String: FileChangeStats] = [:]
+        var index = 0
+        while index < records.count {
+            let record = records[index]
+            index += 1
+            guard let first = record.firstIndex(of: "\t"),
+                  let second = record[record.index(after: first)...].firstIndex(of: "\t") else { continue }
+            let added = String(record[..<first])
+            let removed = String(record[record.index(after: first)..<second])
+            var path = String(record[record.index(after: second)...])
+            if path.isEmpty {
+                guard index + 1 < records.count else { break }
+                path = records[index + 1] // rename: empty path, old path, new path
+                index += 2
+            }
+            result[path] = FileChangeStats(additions: Int(added) ?? 0, deletions: Int(removed) ?? 0,
+                                           isBinary: added == "-" || removed == "-")
+        }
+        return result
     }
 
     static func diff(for file: ChangedFile, in worktree: String, mode: DiffMode) throws -> String {
