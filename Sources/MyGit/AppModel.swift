@@ -7,6 +7,26 @@ private struct WorktreeScan {
     let error: String?
 }
 
+private struct GroupCacheKey: Hashable {
+    let projectID: UUID
+    let repositories: [Repository]
+    let group: WorktreeGroup
+    let commitLimit: Int
+}
+
+private struct GroupCacheEntry {
+    let snapshots: [RepositorySnapshot]
+    let commits: [Commit]
+    var lastUsed: Date
+}
+
+private struct HistoryCacheKey: Hashable {
+    let repositoryID: UUID
+    let path: String
+    let head: String
+    let limit: Int
+}
+
 @MainActor final class AppModel: ObservableObject {
     @Published private(set) var projects: [Project] = []
     @Published var selectedProjectID: UUID?
@@ -28,12 +48,43 @@ private struct WorktreeScan {
     private var refreshGeneration = 0
     private var detailGeneration = 0
     private var commitLimit = 30
+    // Memory only: retain recent views without persisting repository contents.
+    private var groupCache: [GroupCacheKey: GroupCacheEntry] = [:]
+    private var historyCache: [HistoryCacheKey: [Commit]] = [:]
+
+    private var currentCacheKey: GroupCacheKey? {
+        guard let project = selectedProject, let group = selectedGroup else { return nil }
+        return GroupCacheKey(projectID: project.id, repositories: project.repositories,
+                             group: group, commitLimit: commitLimit)
+    }
+
+    private func restoreCachedView() {
+        detailGeneration += 1
+        selectedFile = nil; selectedCommit = nil; detail = ""; imagePreview = nil
+        if let key = currentCacheKey, var entry = groupCache[key] {
+            entry.lastUsed = Date()
+            groupCache[key] = entry
+            snapshots = entry.snapshots
+            commits = entry.commits
+        } else {
+            snapshots = []; commits = []
+        }
+    }
+
+    private func cacheCurrentView() {
+        guard let key = currentCacheKey else { return }
+        groupCache[key] = GroupCacheEntry(snapshots: snapshots, commits: commits, lastUsed: Date())
+        if groupCache.count > 12,
+           let oldest = groupCache.min(by: { $0.value.lastUsed < $1.value.lastUsed })?.key {
+            groupCache.removeValue(forKey: oldest)
+        }
+    }
     private let configURL: URL
 
-    init() {
+    init(configURL: URL? = nil) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        configURL = support.appendingPathComponent("MyGit", isDirectory: true).appendingPathComponent("config.json")
-        if let data = try? Data(contentsOf: configURL), let config = try? JSONDecoder().decode(Configuration.self, from: data) {
+        self.configURL = configURL ?? support.appendingPathComponent("MyGit", isDirectory: true).appendingPathComponent("config.json")
+        if let data = try? Data(contentsOf: self.configURL), let config = try? JSONDecoder().decode(Configuration.self, from: data) {
             projects = config.projects
             selectedProjectID = projects.first(where: { $0.id == config.selectedProjectID })?.id ?? projects.first?.id
             selectedWorktreeGroupID = selectedProject?.worktreeGroups.first(where: { $0.id == config.selectedWorktreeGroupID })?.id
@@ -144,28 +195,26 @@ private struct WorktreeScan {
     func selectProject(_ id: UUID) {
         selectedProjectID = id
         selectedWorktreeGroupID = selectedProject?.worktreeGroups.first?.id
-        selectedFile = nil; selectedCommit = nil; detail = ""; imagePreview = nil
+        restoreCachedView()
         focusedRepositoryID = nil
         save()
-        refresh()
+        refresh(useCachedHistory: true)
     }
 
     func selectWorktreeGroup(_ id: UUID) {
         selectedWorktreeGroupID = id
-        selectedFile = nil; selectedCommit = nil; detail = ""; imagePreview = nil
+        restoreCachedView()
         focusedRepositoryID = nil
-        snapshots = []; commits = []
         save()
-        refresh()
+        refresh(useCachedHistory: true)
     }
 
     func selectWorktree(_ path: String?, for repositoryID: UUID) {
         guard let index = projectIndex,
               let groupIndex = projects[index].worktreeGroups.firstIndex(where: { $0.id == selectedWorktreeGroupID }) else { return }
         projects[index].worktreeGroups[groupIndex].selections[repositoryID] = path
-        selectedFile = nil; selectedCommit = nil; detail = ""; imagePreview = nil
-        snapshots = []; commits = []
-        save(); refresh()
+        restoreCachedView()
+        save(); refresh(useCachedHistory: true)
     }
 
     func selectFile(_ file: ChangedFile) {
@@ -187,7 +236,7 @@ private struct WorktreeScan {
         refresh()
     }
 
-    func refresh() {
+    func refresh(useCachedHistory: Bool = false) {
         refreshGeneration += 1
         let generation = refreshGeneration
         guard let project = selectedProject else {
@@ -203,12 +252,12 @@ private struct WorktreeScan {
             }
             await MainActor.run {
                 guard self.refreshGeneration == generation, self.selectedProjectID == projectID else { return }
-                self.apply(scans: scans, generation: generation)
+                self.apply(scans: scans, generation: generation, useCachedHistory: useCachedHistory)
             }
         }
     }
 
-    private func apply(scans: [WorktreeScan], generation: Int) {
+    private func apply(scans: [WorktreeScan], generation: Int, useCachedHistory: Bool) {
         guard let index = projectIndex else { return }
         let projectID = projects[index].id
         let originalProject = projects[index]
@@ -256,6 +305,7 @@ private struct WorktreeScan {
         }
         if projects[index] != originalProject { save() }
         let limit = commitLimit
+        let cachedHistory = useCachedHistory ? historyCache : [:]
         Task.detached(priority: .utility) {
             let snapshots = selections.map { repository, worktrees, selected, fallback, scanError -> RepositorySnapshot in
                 guard let selected else {
@@ -277,16 +327,28 @@ private struct WorktreeScan {
                 }
             }
             var commits: [Commit] = []
+            var loadedHistory: [HistoryCacheKey: [Commit]] = [:]
             for snapshot in snapshots {
-                guard let path = snapshot.selected?.path else { continue }
-                commits += (try? GitClient.commits(in: path, repositoryID: snapshot.repository.id, limit: limit)) ?? []
+                guard let selected = snapshot.selected else { continue }
+                let key = HistoryCacheKey(repositoryID: snapshot.repository.id, path: selected.path,
+                                          head: selected.head, limit: limit)
+                // Failed reads are retried; never turn an error into a cached empty history.
+                if let history = cachedHistory[key]
+                    ?? (try? GitClient.commits(in: selected.path, repositoryID: snapshot.repository.id, limit: limit)) {
+                    commits += history
+                    loadedHistory[key] = history
+                }
             }
             commits.sort { $0.date > $1.date }
             let sortedCommits = commits
+            let newHistory = loadedHistory
             await MainActor.run {
                 guard self.refreshGeneration == generation, self.selectedProjectID == projectID else { return }
                 self.snapshots = snapshots
                 self.commits = sortedCommits
+                if self.historyCache.count + newHistory.count > 128 { self.historyCache.removeAll() }
+                self.historyCache.merge(newHistory) { _, new in new }
+                self.cacheCurrentView()
                 self.isRefreshing = false
                 if let file = self.selectedFile, !snapshots.contains(where: { $0.files.contains(file) }) {
                     self.selectedFile = nil; self.detail = ""; self.imagePreview = nil
