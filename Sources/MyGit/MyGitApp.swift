@@ -6,6 +6,7 @@ import SwiftUI
             MyGitWindow()
         }
         .windowStyle(.titleBar)
+        .windowToolbarStyle(.unifiedCompact)
         .commands { WorktreeCommands() }
     }
 }
@@ -25,11 +26,17 @@ private struct MyGitWindow: View {
 
 private struct WindowTitleHider: NSViewRepresentable {
     func makeNSView(context: Context) -> TitleHidingView { TitleHidingView() }
-    func updateNSView(_ view: TitleHidingView, context: Context) {}
+    func updateNSView(_ view: TitleHidingView, context: Context) {
+        view.hideTitle()
+    }
 
     final class TitleHidingView: NSView {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            hideTitle()
+        }
+
+        func hideTitle() {
             DispatchQueue.main.async { [weak self] in
                 self?.window?.titleVisibility = .hidden
             }

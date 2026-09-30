@@ -1,13 +1,20 @@
 import SwiftUI
 
 private enum WorkbenchStyle {
-    static let background = Color(red: 0.075, green: 0.075, blue: 0.075)
-    static let sidebar = Color(red: 0.105, green: 0.105, blue: 0.11)
-    static let surface = Color(red: 0.16, green: 0.16, blue: 0.165)
-    static let raised = Color(red: 0.21, green: 0.21, blue: 0.22)
-    static let border = Color(red: 0.30, green: 0.32, blue: 0.36)
-    static let accent = Color(red: 0.68, green: 0.78, blue: 1)
-    static let muted = Color(red: 0.70, green: 0.73, blue: 0.79)
+    static let background = Color(red: 0.078, green: 0.078, blue: 0.086)
+    static let sidebar = Color(red: 0.094, green: 0.094, blue: 0.106)
+    static let surface = Color(red: 0.149, green: 0.149, blue: 0.169)
+    static let raised = Color(red: 0.165, green: 0.165, blue: 0.188)
+    static let border = Color(red: 0.22, green: 0.22, blue: 0.245)
+    static let accent = Color(red: 0.22, green: 0.74, blue: 0.97)
+    static let selection = Color(red: 0.008, green: 0.518, blue: 0.78)
+    static let muted = Color(red: 0.63, green: 0.63, blue: 0.67)
+
+    static func repositoryColor(_ name: String) -> Color {
+        let palette: [Color] = [accent, .orange, .green, .purple, .pink, .yellow]
+        let hash = name.utf8.reduce(UInt64(5381)) { ($0 &* 33) &+ UInt64($1) }
+        return palette[Int(hash % UInt64(palette.count))]
+    }
 }
 
 private struct WorkbenchButtonStyle: ButtonStyle {
@@ -16,10 +23,10 @@ private struct WorkbenchButtonStyle: ButtonStyle {
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
         configuration.label
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(emphasized ? WorkbenchStyle.accent : Color.primary)
+            .foregroundStyle(emphasized ? Color.white : Color.primary)
             .padding(.horizontal, 10)
             .frame(height: 26)
-            .background(emphasized ? WorkbenchStyle.accent.opacity(configuration.isPressed ? 0.25 : 0.14)
+            .background(emphasized ? WorkbenchStyle.selection.opacity(configuration.isPressed ? 0.75 : 1)
                                   : WorkbenchStyle.surface.opacity(configuration.isPressed ? 0.65 : 1))
             .clipShape(RoundedRectangle(cornerRadius: 5))
             .overlay(RoundedRectangle(cornerRadius: 5)
@@ -50,6 +57,95 @@ private struct IconActionButton: View {
     }
 }
 
+// macOS popup buttons reduce complex Menu labels to a title and image.
+// Render the label separately while retaining a native menu for input and accessibility.
+private struct WorkbenchMenu<Content: View, Label: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
+    @ViewBuilder let label: () -> Label
+    @State private var isHovered = false
+    @State private var isMenuOpen = false
+
+    var body: some View {
+        label()
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.white.opacity(isMenuOpen ? 0.14 : (isHovered ? 0.06 : 0)))
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .overlay {
+                Menu(content: content) { Text(title) }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .opacity(0.01)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel(title)
+            }
+            .onHover { isHovered = $0 }
+            .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
+                isHovered = false
+            }
+            .background(MenuTrackingView(isMenuOpen: $isMenuOpen))
+    }
+}
+
+// Mirror the native popup button's pressed state onto its visible label.
+// Hover or cursor position can be stale during native menu tracking.
+private struct MenuTrackingView: NSViewRepresentable {
+    @Binding var isMenuOpen: Bool
+
+    func makeNSView(context: Context) -> TrackingView {
+        let view = TrackingView()
+        view.onTrackingChange = { isMenuOpen = $0 }
+        return view
+    }
+
+    func updateNSView(_ view: TrackingView, context: Context) {
+        view.onTrackingChange = { isMenuOpen = $0 }
+    }
+
+    final class TrackingView: NSView {
+        var onTrackingChange: ((Bool) -> Void)?
+        private var observers: [NSObjectProtocol] = []
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            let center = NotificationCenter.default
+            observers.append(center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { [weak self] _ in
+                guard let self, let root = self.window?.contentView?.superview else { return }
+                func ownsPressedButton(_ view: NSView) -> Bool {
+                    if let button = view as? NSPopUpButton, button.isHighlighted {
+                        let frame = button.convert(button.bounds, to: self)
+                        if self.bounds.contains(NSPoint(x: frame.midX, y: frame.midY)) { return true }
+                    }
+                    return view.subviews.contains(where: ownsPressedButton)
+                }
+                self.onTrackingChange?(ownsPressedButton(root))
+            })
+            observers.append(center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.onTrackingChange?(false)
+            })
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        deinit {
+            for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        }
+    }
+}
+
+private struct HideToolbarTitle: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.toolbar(removing: .title)
+        } else {
+            content
+        }
+    }
+}
+
 private enum NameAction: String, Identifiable {
     case project, repositoryGroup, worktreeGroup
     var id: String { rawValue }
@@ -76,25 +172,50 @@ struct ContentView: View {
     @State private var quickQuery = ""
     @State private var detailLayout: DetailLayout = .split
     @State private var resetDetailScrollOnLoad = false
-    @State private var worktreeGroupsExpanded = true
-    @State private var repositoriesExpanded = true
+    @State private var collapsedRepositoryGroups: Set<UUID> = []
     @FocusState private var quickSearchFocused: Bool
 
     var body: some View {
-        NavigationSplitView {
+        HSplitView {
             sidebar
-                .navigationSplitViewColumnWidth(min: 230, ideal: 260, max: 320)
-                .toolbar {
-                    ToolbarItem(placement: .navigation) { projectMenu }
-                }
-        } detail: {
+                .frame(minWidth: 220, idealWidth: 240, maxWidth: 300)
             if model.selectedProject == nil {
-                ContentUnavailableView("还没有工程", systemImage: "externaldrive", description: Text("创建工程，再添加本地 Git 仓库。"))
-                    .toolbar { Button("新建工程") { present(.project) } }
+                ContentUnavailableView("还没有工程", systemImage: "externaldrive", description: Text("从标题栏创建工程，再添加本地 Git 仓库。"))
             } else {
                 mainArea
             }
         }
+        .toolbar {
+            ToolbarItem(placement: .navigation) { HStack(spacing: 0) { projectMenu } }
+            ToolbarItem(placement: .navigation) { HStack(spacing: 0) { currentWorktreeMenu } }
+            ToolbarItem(placement: .principal) { viewTabs }
+            if #available(macOS 26.0, *) {
+                ToolbarSpacer(.flexible, placement: .primaryAction)
+            } else {
+                ToolbarItem(placement: .automatic) { Spacer() }
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button { model.showQuickSwitch = true } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                        Text("⌘K").font(.system(size: 11, design: .monospaced)).foregroundStyle(WorkbenchStyle.muted)
+                    }
+                }
+                .buttonStyle(WorkbenchButtonStyle())
+                .help("搜索工程、工作树组或仓库 (⌘K)")
+                IconActionButton(systemName: "arrow.clockwise", hint: "刷新 (⌘R)") { model.refresh() }
+                    .overlay {
+                        if model.isRefreshing {
+                            ProgressView().controlSize(.mini).padding(4).background(WorkbenchStyle.surface)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                HStack(spacing: 0) { mergeRequestMenu }
+            }
+        }
+        .modifier(HideToolbarTitle())
+        .toolbarBackground(WorkbenchStyle.sidebar, for: .windowToolbar)
+        .toolbarBackground(.visible, for: .windowToolbar)
         .tint(WorkbenchStyle.accent)
         .background(WorkbenchStyle.background)
         .sheet(item: $nameAction) { action in
@@ -125,81 +246,127 @@ struct ContentView: View {
     }
 
     private var sidebar: some View {
-        List {
-            if let project = model.selectedProject {
-                sidebarHeader("工作树组", action: .worktreeGroup, isExpanded: $worktreeGroupsExpanded)
-                if worktreeGroupsExpanded {
-                    ForEach(project.worktreeGroups) { group in
-                        Button { model.selectWorktreeGroup(group.id) } label: {
-                            HStack(spacing: 7) {
-                                Image(systemName: group.isPrimary ? "house" : "point.topleft.down.to.point.bottomright.curvepath")
-                                    .font(.system(size: 12))
-                                Text(group.name).lineLimit(1)
-                                Spacer(minLength: 0)
-                                if model.selectedWorktreeGroupID == group.id {
-                                    Circle().fill(WorkbenchStyle.accent).frame(width: 5, height: 5)
-                                }
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let project = model.selectedProject {
+                        VStack(spacing: 2) {
+                            sidebarHeader("工作树组", action: .worktreeGroup)
+                            ForEach(project.worktreeGroups) { group in
+                                worktreeRow(group)
                             }
-                            .font(.system(size: 12, weight: model.selectedWorktreeGroupID == group.id ? .semibold : .regular))
-                            .foregroundStyle(model.selectedWorktreeGroupID == group.id ? WorkbenchStyle.accent : Color.primary)
-                            .padding(.horizontal, 12)
-                            .frame(maxWidth: .infinity, minHeight: 34)
-                            .background(model.selectedWorktreeGroupID == group.id ? WorkbenchStyle.accent.opacity(0.15) : Color.clear)
-                            .overlay(alignment: .leading) {
-                                if model.selectedWorktreeGroupID == group.id {
-                                    Rectangle().fill(WorkbenchStyle.accent).frame(width: 2)
+                            if !project.hiddenBranches.isEmpty {
+                                Menu("恢复隐藏的分支组") {
+                                    ForEach(project.hiddenBranches, id: \.self) { branch in
+                                        Button(branch) { model.restoreBranch(branch) }
+                                    }
                                 }
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                        .contextMenu {
-                            if !group.isPrimary {
-                                Button("删除工作树组", role: .destructive) { model.removeWorktreeGroup(group.id) }
+                                .font(.system(size: 11))
                             }
                         }
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                    }
-                    if !project.hiddenBranches.isEmpty {
-                        Menu("恢复隐藏的分支组") {
-                            ForEach(project.hiddenBranches, id: \.self) { branch in
-                                Button(branch) { model.restoreBranch(branch) }
+                        VStack(alignment: .leading, spacing: 6) {
+                            sidebarHeader("关联仓库", action: .repositoryGroup)
+                            ForEach(project.groups) { group in
+                                repositoryGroupRow(group, in: project)
                             }
                         }
                     }
                 }
-                sidebarHeader("仓库", action: .repositoryGroup, isExpanded: $repositoriesExpanded)
-                if repositoriesExpanded {
-                    ForEach(project.groups) { group in
-                        DisclosureGroup {
-                            ForEach(project.repositories.filter { $0.groupID == group.id }) { repository in
-                                repositoryRow(repository)
-                            }
-                        } label: {
-                            HStack {
-                                Text(group.name)
-                                Spacer(minLength: 0)
-                                IconActionButton(systemName: "folder.badge.plus", hint: "导入仓库到\(group.name)") {
-                                    chooseRepositories(for: group.id)
-                                }
-                            }
-                            .contextMenu {
-                                Button("删除仓库组") { model.removeRepositoryGroup(group.id) }
-                            }
-                        }
-                    }
-                }
+                .padding(8)
             }
+            HStack(spacing: 6) {
+                Circle().fill(model.isRefreshing ? Color.orange : Color.green).frame(width: 6, height: 6)
+                Text(model.isRefreshing ? "正在刷新本地状态" : "本地仓库 · 自动刷新")
+                Spacer(minLength: 0)
+                Text("只读")
+            }
+            .font(.system(size: 10))
+            .foregroundStyle(WorkbenchStyle.muted)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .overlay(alignment: .top) { Divider() }
         }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
         .background(WorkbenchStyle.sidebar)
     }
 
+    private func repositoryGroupRow(_ group: RepositoryGroup, in project: Project) -> some View {
+        let repositories = project.repositories.filter { $0.groupID == group.id }
+        let expanded = !collapsedRepositoryGroups.contains(group.id)
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 0) {
+                Button {
+                    if expanded { collapsedRepositoryGroups.insert(group.id) }
+                    else { collapsedRepositoryGroups.remove(group.id) }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .frame(width: 16)
+                        Text(group.name).lineLimit(1)
+                        Text("(\(repositories.count))")
+                            .font(.system(size: 10, design: .monospaced))
+                        Spacer(minLength: 0)
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(WorkbenchStyle.muted)
+                    .frame(height: 28)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(expanded ? "收起" : "展开")仓库组 \(group.name)")
+                IconActionButton(systemName: "folder.badge.plus", hint: "导入仓库到\(group.name)") {
+                    chooseRepositories(for: group.id)
+                }
+            }
+            .padding(.horizontal, 10)
+            .contextMenu {
+                Button("删除仓库组") { model.removeRepositoryGroup(group.id) }
+            }
+            if expanded {
+                ForEach(repositories) { repository in
+                    repositoryRow(repository)
+                }
+            }
+        }
+    }
+
+    private func worktreeRow(_ group: WorktreeGroup) -> some View {
+        let selected = model.selectedWorktreeGroupID == group.id
+        return Button { model.selectWorktreeGroup(group.id) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: group.isPrimary ? "arrow.triangle.branch" : "point.topleft.down.to.point.bottomright.curvepath")
+                    .font(.system(size: 13))
+                    .frame(width: 16)
+                    .foregroundStyle(selected ? Color.white : WorkbenchStyle.muted)
+                Text(group.name).lineLimit(1)
+                Spacer(minLength: 0)
+                if selected {
+                    Text("\(model.snapshots.filter { !$0.isFallback }.count) 仓")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(Color.black.opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+            }
+            .font(.system(size: 12, weight: selected ? .medium : .regular))
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: 30)
+            .background(selected ? WorkbenchStyle.selection : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .contextMenu {
+            if !group.isPrimary {
+                Button("删除工作树组", role: .destructive) { model.removeWorktreeGroup(group.id) }
+            }
+        }
+    }
+
     private var projectMenu: some View {
-        Menu {
+        WorkbenchMenu(title: model.selectedProject?.name ?? "选择工程") {
             ForEach(model.projects) { project in
                 Button {
                     model.selectProject(project.id)
@@ -215,10 +382,11 @@ struct ContentView: View {
             Button("新建工程…") { present(.project) }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "square.stack.3d.up")
+                Image(systemName: "square.3.layers.3d")
                     .foregroundStyle(WorkbenchStyle.accent)
                 Text(model.selectedProject?.name ?? "选择工程")
-                    .lineLimit(1)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1).truncationMode(.middle)
                 if let count = model.selectedProject?.repositories.count {
                     Text("\(count) 仓库")
                         .font(.system(size: 10, weight: .medium))
@@ -228,40 +396,42 @@ struct ContentView: View {
                         .background(WorkbenchStyle.raised)
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                 }
-                Image(systemName: "chevron.down")
+                Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(WorkbenchStyle.muted)
             }
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 9).frame(height: 26)
+            .background(WorkbenchStyle.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(WorkbenchStyle.border))
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .buttonStyle(WorkbenchButtonStyle())
         .fixedSize()
         .help("切换工程")
     }
 
-    private func sidebarHeader(_ title: String, action: NameAction, isExpanded: Binding<Bool>) -> some View {
-        HStack(spacing: 12) {
-            Button { isExpanded.wrappedValue.toggle() } label: {
-                HStack {
-                    Text(title)
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help(isExpanded.wrappedValue ? "收起\(title)" : "展开\(title)")
-            .accessibilityLabel(isExpanded.wrappedValue ? "收起\(title)" : "展开\(title)")
+    private func sidebarHeader(_ title: String, action: NameAction) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 12, weight: .bold))
+                .tracking(0.4)
+                .foregroundStyle(Color(red: 0.84, green: 0.84, blue: 0.87))
+            Spacer(minLength: 0)
             IconActionButton(systemName: "plus", hint: action.title) {
                 present(action)
             }
         }
-        .font(.caption.weight(.semibold))
-        .listRowInsets(EdgeInsets(top: 8, leading: -11, bottom: 4, trailing: 1))
+        .foregroundStyle(WorkbenchStyle.muted)
+        .padding(.horizontal, 10)
+        .frame(height: 28)
     }
 
     private func repositoryRow(_ repository: Repository) -> some View {
         let snapshot = model.snapshots.first { $0.repository.id == repository.id }
-        return Menu {
+        return WorkbenchMenu(title: repository.name) {
             Button("恢复自动匹配") { model.selectWorktree(nil, for: repository.id) }
             Divider()
             ForEach(snapshot?.worktrees ?? []) { worktree in
@@ -272,28 +442,31 @@ struct ContentView: View {
                 }
             }
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2)
-                    .foregroundStyle(WorkbenchStyle.muted)
+            HStack(alignment: .top, spacing: 6) {
+                Circle().fill(WorkbenchStyle.repositoryColor(repository.name))
+                    .frame(width: 6, height: 6)
+                    .frame(width: 16, height: 14)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(repository.name).lineLimit(1)
+                    Text(repository.name).font(.system(size: 12, weight: .regular)).lineLimit(1)
                     if let selected = snapshot?.selected {
                         Text(selected.branch ?? "分离 HEAD")
-                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            .font(.system(size: 10, design: .monospaced)).foregroundStyle(WorkbenchStyle.muted).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
                 if let count = snapshot?.files.count, count > 0 {
                     Text("\(count)")
-                        .font(.caption2).foregroundStyle(WorkbenchStyle.muted)
+                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(WorkbenchStyle.accent)
                 }
             }
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 38)
+            .padding(.leading, 26)
+            .padding(.trailing, 10)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, minHeight: 34)
             .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .focusEffectDisabled()
         .contextMenu {
             if let project = model.selectedProject {
@@ -309,84 +482,94 @@ struct ContentView: View {
         .listRowBackground(Color.clear)
     }
 
+    private var currentWorktreeMenu: some View {
+        WorkbenchMenu(title: model.selectedGroup?.name ?? "工作树组") {
+            ForEach(model.selectedProject?.worktreeGroups ?? []) { group in
+                Button(group.name) { model.selectWorktreeGroup(group.id) }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Circle().fill(Color.green).frame(width: 6, height: 6)
+                Text(model.selectedGroup?.name ?? "工作树组")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            .padding(.horizontal, 8).frame(height: 26)
+            .background(WorkbenchStyle.surface.opacity(0.65))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(WorkbenchStyle.border))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .frame(maxWidth: 210)
+        .disabled(model.selectedProject == nil)
+        .help(model.selectedGroup?.name ?? "选择工作树组")
+    }
+
+    private var viewTabs: some View {
+        HStack(spacing: 2) {
+            contentTab("未提交修改", icon: "doc.badge.ellipsis", count: nil, index: 0)
+            contentTab("提交记录", icon: "clock.arrow.circlepath", count: nil, index: 1)
+        }
+        .padding(2)
+        .background(WorkbenchStyle.background)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(WorkbenchStyle.border))
+        .disabled(model.selectedProject == nil)
+    }
+
+    private var mergeRequestMenu: some View {
+        WorkbenchMenu(title: "创建 MR") {
+            ForEach(model.snapshots.filter {
+                model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID
+            }) { snapshot in
+                if let url = snapshot.mergeRequestURL {
+                    Button("\(snapshot.repository.name) · \(snapshot.selected?.branch ?? "")") { openURL(url) }
+                } else {
+                    Button("\(snapshot.repository.name) · 无可用分支或远端") {}.disabled(true)
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.triangle.merge")
+                Text("创建 MR")
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10).frame(height: 26)
+            .background(WorkbenchStyle.selection)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .buttonStyle(WorkbenchButtonStyle(emphasized: true))
+        .fixedSize()
+        .disabled(!model.snapshots.contains {
+            (model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID) && $0.mergeRequestURL != nil
+        })
+        .help("在浏览器中打开 GitLab 创建页面，使用当前检出的分支")
+    }
+
     private var mainArea: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 7) {
-                        Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
-                            .font(.system(size: 14))
-                            .foregroundStyle(WorkbenchStyle.accent)
-                        Text(model.selectedGroup?.name ?? "工作树组")
-                            .font(.system(size: 16, weight: .semibold))
-                            .lineLimit(1)
-                    }
-                    Text("\(model.snapshots.count) 个仓库 · \(model.snapshots.reduce(0) { $0 + $1.files.count }) 个修改文件")
-                        .font(.system(size: 11)).foregroundStyle(WorkbenchStyle.muted)
-                }
-                Spacer()
-                if model.focusedRepositoryID != nil {
-                    Button("显示全部仓库") { model.focusedRepositoryID = nil }
-                        .buttonStyle(WorkbenchButtonStyle())
-                }
-                Menu {
-                    ForEach(model.snapshots.filter {
-                        model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID
-                    }) { snapshot in
-                        if let url = snapshot.mergeRequestURL {
-                            Button("\(snapshot.repository.name) · \(snapshot.selected?.branch ?? "")") {
-                                openURL(url)
-                            }
-                        } else {
-                            Button("\(snapshot.repository.name) · 无可用分支或远端") {}
-                                .disabled(true)
-                        }
-                    }
-                } label: {
-                    Label("创建 MR", systemImage: "arrow.up.right.square")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(WorkbenchStyle.accent)
-                        .padding(.horizontal, 10)
-                        .frame(height: 26)
-                        .background(WorkbenchStyle.accent.opacity(0.14))
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                        .overlay(RoundedRectangle(cornerRadius: 5)
-                            .strokeBorder(WorkbenchStyle.accent.opacity(0.32)))
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .disabled(model.snapshots.isEmpty || !model.snapshots.contains {
-                    (model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID)
-                        && $0.mergeRequestURL != nil
-                })
-                .help("在浏览器中打开 GitLab 创建页面，使用当前检出的分支")
-                if model.isRefreshing { ProgressView().controlSize(.small) }
-                Button { model.showQuickSwitch = true } label: { Label("快速切换", systemImage: "magnifyingglass") }
-                    .buttonStyle(WorkbenchButtonStyle())
-                    .help("⌘K")
-                IconActionButton(systemName: "arrow.clockwise", hint: "刷新") { model.refresh() }
-            }
-            .padding(.horizontal, 16)
-            .frame(height: 62)
-            .background(WorkbenchStyle.sidebar)
-            Rectangle().fill(WorkbenchStyle.border.opacity(0.45)).frame(height: 1)
-            HStack {
-                HStack(spacing: 2) {
-                    contentTab("未提交修改", icon: "doc.badge.ellipsis", count: model.snapshots.reduce(0) { $0 + $1.files.count }, index: 0)
-                    contentTab("提交记录", icon: "clock.arrow.circlepath", count: nil, index: 1)
-                }
-                .padding(3)
-                .background(WorkbenchStyle.raised)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 48)
-            .background(WorkbenchStyle.sidebar)
             HSplitView {
                 if model.activeTab == 0 { changesList } else { commitsList }
                 detailPane
             }
+            HStack {
+                Text("\(model.snapshots.count) 个仓库 · \(model.snapshots.reduce(0) { $0 + $1.files.count }) 个修改文件")
+                Spacer()
+                if model.focusedRepositoryID != nil {
+                    Button("显示全部仓库") { model.focusedRepositoryID = nil }.buttonStyle(.plain)
+                        .foregroundStyle(WorkbenchStyle.accent)
+                }
+            }
+            .font(.system(size: 10))
+            .foregroundStyle(WorkbenchStyle.muted)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(WorkbenchStyle.sidebar)
+            .overlay(alignment: .top) { Divider() }
         }
         .background(WorkbenchStyle.background)
     }
@@ -416,6 +599,7 @@ struct ContentView: View {
             .clipShape(RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 
@@ -426,17 +610,17 @@ struct ContentView: View {
                     if let error = snapshot.error {
                         Text(error).font(.caption).foregroundStyle(.red)
                     } else if snapshot.files.isEmpty {
-                        Text("无未提交修改").font(.caption).foregroundStyle(.secondary)
+                        Text("无未提交修改").font(.system(size: 10)).foregroundStyle(WorkbenchStyle.muted)
                     } else {
                         ForEach(snapshot.files) { file in
                             Button { model.selectFile(file) } label: {
                                 HStack(spacing: 8) {
-                                    Image(systemName: "doc.text").foregroundStyle(.secondary)
+                                    Image(systemName: "doc.text").foregroundStyle(WorkbenchStyle.repositoryColor(snapshot.repository.name))
                                     Text(file.path).lineLimit(1)
                                     Spacer(minLength: 0)
                                     Text(file.statusLabel).font(.caption2).foregroundStyle(.secondary)
                                 }
-                                .fontWeight(model.selectedFile == file ? .semibold : .regular)
+                                .font(.system(size: 12, weight: model.selectedFile == file ? .semibold : .regular))
                             }
                             .buttonStyle(.plain)
                         }
@@ -452,7 +636,7 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(minWidth: 330, idealWidth: 430)
+        .frame(minWidth: 280, idealWidth: 340)
         .scrollContentBackground(.hidden)
         .background(WorkbenchStyle.background)
     }
@@ -463,13 +647,13 @@ struct ContentView: View {
                 Button { model.selectCommit(commit) } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(commit.subject).lineLimit(2)
-                            .fontWeight(model.selectedCommit == commit ? .semibold : .regular)
+                            .font(.system(size: 12, weight: model.selectedCommit == commit ? .semibold : .medium))
                         HStack {
                             Text(model.selectedProject?.repositories.first(where: { $0.id == commit.repositoryID })?.name ?? "仓库")
                             Text(commit.hash.prefix(7))
                             Text(commit.date, style: .relative)
                         }
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.system(size: 10)).foregroundStyle(WorkbenchStyle.muted)
                     }
                 }
                 .buttonStyle(.plain)
@@ -478,7 +662,7 @@ struct ContentView: View {
             Button("加载更早提交") { model.loadMoreCommits() }
                 .frame(maxWidth: .infinity)
         }
-        .frame(minWidth: 330, idealWidth: 430)
+        .frame(minWidth: 280, idealWidth: 340)
         .scrollContentBackground(.hidden)
         .background(WorkbenchStyle.background)
     }
