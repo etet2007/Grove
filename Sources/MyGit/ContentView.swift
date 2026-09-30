@@ -34,6 +34,25 @@ private struct WorkbenchButtonStyle: ButtonStyle {
     }
 }
 
+private struct MergeRequestRowStyle: ButtonStyle {
+    func makeBody(configuration: ButtonStyleConfiguration) -> some View {
+        HoverRow(label: configuration.label, isPressed: configuration.isPressed)
+    }
+
+    private struct HoverRow: View {
+        let label: ButtonStyleConfiguration.Label
+        let isPressed: Bool
+        @State private var isHovered = false
+
+        var body: some View {
+            label
+                .background(isPressed ? WorkbenchStyle.raised : (isHovered ? WorkbenchStyle.surface : Color.clear))
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .onHover { isHovered = $0 }
+        }
+    }
+}
+
 private struct IconActionButton: View {
     let systemName: String
     let hint: String
@@ -57,82 +76,57 @@ private struct IconActionButton: View {
     }
 }
 
-// macOS popup buttons reduce complex Menu labels to a title and image.
-// Render the label separately while retaining a native menu for input and accessibility.
+// Keep the complete custom label and use a visible, anchored picker for selection.
 private struct WorkbenchMenu<Content: View, Label: View>: View {
     let title: String
+    var arrowEdge: Edge = .top
     @ViewBuilder let content: () -> Content
     @ViewBuilder let label: () -> Label
     @State private var isHovered = false
     @State private var isMenuOpen = false
 
     var body: some View {
-        label()
-            .overlay {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.white.opacity(isMenuOpen ? 0.14 : (isHovered ? 0.06 : 0)))
+        Button { isMenuOpen.toggle() } label: {
+            label()
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.white.opacity(isMenuOpen ? 0.14 : (isHovered ? 0.06 : 0)))
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .onHover { isHovered = $0 }
+        .popover(isPresented: $isMenuOpen, arrowEdge: arrowEdge) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) { content() }
+                    .buttonStyle(PickerChoiceStyle { isMenuOpen = false })
+                    .font(.system(size: 12))
+                    .padding(8)
             }
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-            .overlay {
-                Menu(content: content) { Text(title) }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .opacity(0.01)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityLabel(title)
-            }
-            .onHover { isHovered = $0 }
-            .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
-                isHovered = false
-            }
-            .background(MenuTrackingView(isMenuOpen: $isMenuOpen))
+            .frame(width: 320)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxHeight: 360)
+            .background(WorkbenchStyle.sidebar)
+            .preferredColorScheme(.dark)
+        }
     }
 }
 
-// Mirror the native popup button's pressed state onto its visible label.
-// Hover or cursor position can be stale during native menu tracking.
-private struct MenuTrackingView: NSViewRepresentable {
-    @Binding var isMenuOpen: Bool
+private struct PickerChoiceStyle: PrimitiveButtonStyle {
+    let dismiss: () -> Void
 
-    func makeNSView(context: Context) -> TrackingView {
-        let view = TrackingView()
-        view.onTrackingChange = { isMenuOpen = $0 }
-        return view
-    }
-
-    func updateNSView(_ view: TrackingView, context: Context) {
-        view.onTrackingChange = { isMenuOpen = $0 }
-    }
-
-    final class TrackingView: NSView {
-        var onTrackingChange: ((Bool) -> Void)?
-        private var observers: [NSObjectProtocol] = []
-
-        override init(frame: NSRect) {
-            super.init(frame: frame)
-            let center = NotificationCenter.default
-            observers.append(center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { [weak self] _ in
-                guard let self, let root = self.window?.contentView?.superview else { return }
-                func ownsPressedButton(_ view: NSView) -> Bool {
-                    if let button = view as? NSPopUpButton, button.isHighlighted {
-                        let frame = button.convert(button.bounds, to: self)
-                        if self.bounds.contains(NSPoint(x: frame.midX, y: frame.midY)) { return true }
-                    }
-                    return view.subviews.contains(where: ownsPressedButton)
-                }
-                self.onTrackingChange?(ownsPressedButton(root))
-            })
-            observers.append(center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.onTrackingChange?(false)
-            })
+    func makeBody(configuration: PrimitiveButtonStyleConfiguration) -> some View {
+        Button {
+            dismiss()
+            configuration.trigger()
+        } label: {
+            configuration.label
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8).padding(.vertical, 7)
+                .contentShape(Rectangle())
         }
-
-        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-        deinit {
-            for observer in observers { NotificationCenter.default.removeObserver(observer) }
-        }
+        .buttonStyle(MergeRequestRowStyle())
     }
 }
 
@@ -172,6 +166,7 @@ struct ContentView: View {
     @State private var quickQuery = ""
     @State private var detailLayout: DetailLayout = .split
     @State private var resetDetailScrollOnLoad = false
+    @State private var showMergeRequestPicker = false
     @State private var collapsedRepositoryGroups: Set<UUID> = []
     @FocusState private var quickSearchFocused: Bool
 
@@ -408,7 +403,6 @@ struct ContentView: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .buttonStyle(WorkbenchButtonStyle())
         .fixedSize()
         .help("切换工程")
     }
@@ -431,7 +425,7 @@ struct ContentView: View {
 
     private func repositoryRow(_ repository: Repository) -> some View {
         let snapshot = model.snapshots.first { $0.repository.id == repository.id }
-        return WorkbenchMenu(title: repository.name) {
+        return WorkbenchMenu(title: repository.name, arrowEdge: .leading) {
             Button("恢复自动匹配") { model.selectWorktree(nil, for: repository.id) }
             Divider()
             ForEach(snapshot?.worktrees ?? []) { worktree in
@@ -519,35 +513,59 @@ struct ContentView: View {
     }
 
     private var mergeRequestMenu: some View {
-        WorkbenchMenu(title: "创建 MR") {
-            ForEach(model.snapshots.filter {
-                model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID
-            }) { snapshot in
-                if let url = snapshot.mergeRequestURL {
-                    Button("\(snapshot.repository.name) · \(snapshot.selected?.branch ?? "")") { openURL(url) }
-                } else {
-                    Button("\(snapshot.repository.name) · 无可用分支或远端") {}.disabled(true)
-                }
-            }
-        } label: {
+        Button { showMergeRequestPicker.toggle() } label: {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.triangle.merge")
                 Text("创建 MR")
             }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 10).frame(height: 26)
-            .background(WorkbenchStyle.selection)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
         .buttonStyle(WorkbenchButtonStyle(emphasized: true))
         .fixedSize()
         .disabled(!model.snapshots.contains {
             (model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID) && $0.mergeRequestURL != nil
         })
-        .help("在浏览器中打开 GitLab 创建页面，使用当前检出的分支")
+        .help("选择仓库，在浏览器中打开 GitLab 创建页面")
+        .popover(isPresented: $showMergeRequestPicker, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("选择仓库创建 MR")
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                Divider()
+                ForEach(model.snapshots.filter {
+                    model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID
+                }) { snapshot in
+                    Button {
+                        guard let url = snapshot.mergeRequestURL else { return }
+                        showMergeRequestPicker = false
+                        openURL(url) { accepted in
+                            if !accepted { model.error = "无法打开 GitLab 创建页面，请检查默认浏览器设置。" }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Circle().fill(WorkbenchStyle.repositoryColor(snapshot.repository.name))
+                                .frame(width: 6, height: 6)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(snapshot.repository.name).font(.system(size: 12, weight: .medium))
+                                Text(snapshot.mergeRequestURL == nil ? "无可用分支或 GitLab 远端" : snapshot.selected?.branch ?? "")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(WorkbenchStyle.muted)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "arrow.up.right").font(.system(size: 11))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 6).padding(.horizontal, 8)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(MergeRequestRowStyle())
+                    .disabled(snapshot.mergeRequestURL == nil)
+                }
+            }
+            .padding(10)
+            .frame(width: 340)
+            .background(WorkbenchStyle.sidebar)
+            .preferredColorScheme(.dark)
+        }
     }
 
     private var mainArea: some View {
@@ -621,6 +639,8 @@ struct ContentView: View {
                                     Text(file.statusLabel).font(.caption2).foregroundStyle(.secondary)
                                 }
                                 .font(.system(size: 12, weight: model.selectedFile == file ? .semibold : .regular))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                         }
@@ -655,6 +675,8 @@ struct ContentView: View {
                         }
                         .font(.system(size: 10)).foregroundStyle(WorkbenchStyle.muted)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .padding(.vertical, 3)
