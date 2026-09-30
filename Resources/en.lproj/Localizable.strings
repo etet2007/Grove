@@ -131,3 +131,7 @@
 "↵  打开" = "↵  Open";
 "esc  关闭" = "esc  Close";
 "工程" = "Project";
+"无修改" = "No Changes";
+"读取失败" = "Read Failed";
+"已折叠" = "Collapsed";
+"已展开" = "Expanded";

@@ -169,6 +169,7 @@ struct ContentView: View {
     @State private var quickSelection = 0
     @State private var showMergeRequestPicker = false
     @State private var collapsedRepositoryGroups: Set<UUID> = []
+    @State private var collapsedChangeRepositories: Set<UUID> = []
 
     var body: some View {
         HSplitView {
@@ -614,43 +615,90 @@ struct ContentView: View {
     }
 
     private var changesList: some View {
-        List {
-            ForEach(model.snapshots.filter { model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID }) { snapshot in
-                Section {
-                    if let error = snapshot.error {
-                        Text(error).font(.caption).foregroundStyle(.red)
-                    } else if snapshot.files.isEmpty {
-                        Text("无未提交修改").font(.system(size: 10)).foregroundStyle(WorkbenchStyle.muted)
-                    } else {
-                        ForEach(snapshot.files) { file in
-                            Button { model.selectFile(file) } label: {
-                                ChangedFileRow(file: file, selected: model.selectedFile?.id == file.id)
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(model.snapshots.filter { model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID }) { snapshot in
+                    repositoryChangeHeader(snapshot)
+                    if !collapsedChangeRepositories.contains(snapshot.repository.id) {
+                        if let error = snapshot.error {
+                            Text(error).font(.system(size: 11)).foregroundStyle(.red)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 28).padding(.vertical, 10)
+                        } else if !snapshot.files.isEmpty {
+                            LazyVStack(spacing: 2) {
+                                ForEach(snapshot.files) { file in
+                                    Button { model.selectFile(file) } label: {
+                                        ChangedFileRow(file: file, selected: model.selectedFile?.id == file.id)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
-                            .buttonStyle(.plain)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
+                            .padding(.leading, 16).padding(.trailing, 6)
+                            .padding(.top, 6).padding(.bottom, 12)
                         }
-                    }
-                } header: {
-                    HStack {
-                        Text(snapshot.repository.name).lineLimit(1)
-                        if snapshot.isFallback { Text("共享主目录").foregroundStyle(.orange) }
-                        if let selected = snapshot.selected {
-                            Text(selected.branch ?? AppLocalization.text("分离 HEAD")).foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 4)
-                        let conflicts = snapshot.files.filter { $0.changeKind == .conflict }.count
-                        if conflicts > 0 {
-                            Text(AppLocalization.text("%ld conflicts", conflicts)).foregroundStyle(.red).fixedSize()
-                        }
-                        Text(AppLocalization.text("%ld changes", snapshot.files.count)).foregroundStyle(.secondary).fixedSize()
                     }
                 }
             }
         }
         .frame(minWidth: 280, idealWidth: 340)
-        .scrollContentBackground(.hidden)
         .background(WorkbenchStyle.background)
+    }
+
+    private func repositoryChangeHeader(_ snapshot: RepositorySnapshot) -> some View {
+        let repositoryID = snapshot.repository.id
+        let collapsed = collapsedChangeRepositories.contains(repositoryID)
+        let hasContent = !snapshot.files.isEmpty || snapshot.error != nil
+        let conflicts = snapshot.files.filter { $0.changeKind == .conflict }.count
+        return Button {
+            if collapsed { collapsedChangeRepositories.remove(repositoryID) }
+            else { collapsedChangeRepositories.insert(repositoryID) }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(WorkbenchStyle.muted)
+                    .frame(width: 12)
+                    .opacity(hasContent ? 1 : 0)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(snapshot.repository.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                        .lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 6) {
+                        if let selected = snapshot.selected {
+                            Text(selected.branch ?? AppLocalization.text("分离 HEAD"))
+                                .lineLimit(1).truncationMode(.middle)
+                        }
+                        if snapshot.isFallback {
+                            Text("共享主目录").foregroundStyle(.orange).fixedSize()
+                        }
+                    }
+                    .font(.system(size: 10)).foregroundStyle(WorkbenchStyle.muted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(snapshot.error != nil ? AppLocalization.text("读取失败") :
+                         snapshot.files.isEmpty ? AppLocalization.text("无修改") :
+                         AppLocalization.text("%ld changes", snapshot.files.count))
+                        .foregroundStyle(snapshot.error != nil ? Color.red : WorkbenchStyle.muted)
+                    if conflicts > 0 {
+                        Text(AppLocalization.text("%ld conflicts", conflicts)).foregroundStyle(.red)
+                    }
+                }
+                .font(.system(size: 10)).fixedSize()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(WorkbenchStyle.sidebar)
+            .overlay(alignment: .top) { Rectangle().fill(WorkbenchStyle.border.opacity(0.65)).frame(height: 1) }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(MergeRequestRowStyle())
+        .disabled(!hasContent)
+        .help(snapshot.repository.name + " · " + (snapshot.selected?.branch ?? AppLocalization.text("分离 HEAD")))
+        .accessibilityLabel(snapshot.repository.name)
+        .accessibilityValue(hasContent ? AppLocalization.text(collapsed ? "已折叠" : "已展开") : AppLocalization.text("无修改"))
+        .accessibilityHint(hasContent ? AppLocalization.text(collapsed ? "展开" : "收起") : "")
     }
 
     private var commitsList: some View {
