@@ -54,7 +54,7 @@ struct GitClient {
     static func canonicalRepository(at path: String) throws -> String {
         let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
         let root = try text(["rev-parse", "--show-toplevel"], in: resolved).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !root.isEmpty else { throw GitError.invalidRepository("不是有效的 Git 仓库：\(path)") }
+        guard !root.isEmpty else { throw GitError.invalidRepository(AppLocalization.text("不是有效的 Git 仓库：%@", path)) }
         return URL(fileURLWithPath: root).resolvingSymlinksInPath().standardizedFileURL.path
     }
 
@@ -164,14 +164,14 @@ struct GitClient {
 
     static func diff(for file: ChangedFile, in worktree: String, mode: DiffMode) throws -> String {
         if file.isUntracked {
-            if mode == .staged { return "未跟踪文件没有已暂存修改。" }
+            if mode == .staged { return AppLocalization.text("未跟踪文件没有已暂存修改。") }
             let url = URL(fileURLWithPath: worktree).appendingPathComponent(file.path)
             let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
             if let size = attributes?[.size] as? NSNumber, size.intValue > 250_000 {
-                return "未跟踪文件太大，暂不预览（\(size.intValue) 字节）。"
+                return AppLocalization.text("Untracked file is too large to preview (%lld bytes).", size.intValue)
             }
             guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
-                return "未跟踪文件无法作为 UTF-8 文本预览。"
+                return AppLocalization.text("未跟踪文件无法作为 UTF-8 文本预览。")
             }
             return "--- /dev/null\n+++ b/\(file.path)\n" + contents.split(separator: "\n", omittingEmptySubsequences: false).map { "+" + $0 }.joined(separator: "\n")
         }
@@ -182,7 +182,7 @@ struct GitClient {
         case .all: args = ["diff", "HEAD", "--no-ext-diff", "--", file.path]
         }
         let output = try text(args, in: worktree)
-        return output.isEmpty ? "这一视图没有可显示的修改。" : output
+        return output.isEmpty ? AppLocalization.text("这一视图没有可显示的修改。") : output
     }
 
     static func imagePreview(for file: ChangedFile, in worktree: String, mode: DiffMode) -> ImageDiffPreview? {
@@ -191,13 +191,13 @@ struct GitClient {
         func blob(_ revision: String) -> ImageDiffSide {
             guard let sizeText = try? text(["cat-file", "-s", revision], in: worktree),
                   let size = Int(sizeText.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-                return ImageDiffSide(data: nil, byteCount: nil, message: "此版本无文件")
+                return ImageDiffSide(data: nil, byteCount: nil, message: AppLocalization.text("此版本无文件"))
             }
             guard size <= imagePreviewLimit else {
-                return ImageDiffSide(data: nil, byteCount: size, message: "图片超过 20 MB，暂不预览")
+                return ImageDiffSide(data: nil, byteCount: size, message: AppLocalization.text("图片超过 20 MB，暂不预览"))
             }
             guard let data = try? run(["cat-file", "blob", revision], in: worktree) else {
-                return ImageDiffSide(data: nil, byteCount: size, message: "无法读取图片")
+                return ImageDiffSide(data: nil, byteCount: size, message: AppLocalization.text("无法读取图片"))
             }
             return ImageDiffSide(data: data, byteCount: size, message: nil)
         }
@@ -206,21 +206,21 @@ struct GitClient {
             let url = URL(fileURLWithPath: worktree).appendingPathComponent(file.path)
             guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
                   let size = attributes[.size] as? NSNumber else {
-                return ImageDiffSide(data: nil, byteCount: nil, message: "此版本无文件")
+                return ImageDiffSide(data: nil, byteCount: nil, message: AppLocalization.text("此版本无文件"))
             }
             guard size.intValue <= imagePreviewLimit else {
-                return ImageDiffSide(data: nil, byteCount: size.intValue, message: "图片超过 20 MB，暂不预览")
+                return ImageDiffSide(data: nil, byteCount: size.intValue, message: AppLocalization.text("图片超过 20 MB，暂不预览"))
             }
             guard let data = try? Data(contentsOf: url) else {
-                return ImageDiffSide(data: nil, byteCount: size.intValue, message: "无法读取图片")
+                return ImageDiffSide(data: nil, byteCount: size.intValue, message: AppLocalization.text("无法读取图片"))
             }
             return ImageDiffSide(data: data, byteCount: size.intValue, message: nil)
         }
 
         if file.isUntracked {
-            return ImageDiffPreview(old: ImageDiffSide(data: nil, byteCount: nil, message: "此版本无文件"),
+            return ImageDiffPreview(old: ImageDiffSide(data: nil, byteCount: nil, message: AppLocalization.text("此版本无文件")),
                                     new: mode == .staged
-                                        ? ImageDiffSide(data: nil, byteCount: nil, message: "未跟踪文件没有已暂存修改")
+                                        ? ImageDiffSide(data: nil, byteCount: nil, message: AppLocalization.text("未跟踪文件没有已暂存修改。"))
                                         : workingFile())
         }
         switch mode {

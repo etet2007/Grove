@@ -16,5 +16,6 @@ mkdir -p dist/MyGit.app/Contents/Resources
 cp .build/release/MyGit dist/MyGit.app/Contents/MacOS/MyGit
 cp Resources/Info.plist dist/MyGit.app/Contents/Info.plist
 cp Resources/MyGitIcon.icns dist/MyGit.app/Contents/Resources/MyGitIcon.icns
+cp -R Resources/en.lproj Resources/zh-Hans.lproj dist/MyGit.app/Contents/Resources/
 codesign --force --sign "$signing_identity" dist/MyGit.app
 echo "Built: $PWD/dist/MyGit.app"
