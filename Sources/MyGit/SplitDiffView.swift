@@ -190,7 +190,7 @@ private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
         let scrollView = NSScrollView()
         scrollView.hasHorizontalScroller = true
         scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
+        scrollView.autohidesScrollers = false
         scrollView.horizontalScrollElasticity = .none
         scrollView.verticalScrollElasticity = .none
         scrollView.contentView.postsBoundsChangedNotifications = true
