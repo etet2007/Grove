@@ -15,6 +15,15 @@ enum WorkbenchStyle {
         let hash = name.utf8.reduce(UInt64(5381)) { ($0 &* 33) &+ UInt64($1) }
         return palette[Int(hash % UInt64(palette.count))]
     }
+
+    static func committerColor(_ name: String) -> Color {
+        // Use a stable hash so colors survive app restarts and list reordering.
+        let hash = name.utf8.reduce(UInt64(14695981039346656037)) {
+            ($0 ^ UInt64($1)) &* 1099511628211
+        }
+        let hue = Double(hash % 3600) / 3600
+        return Color(hue: hue, saturation: 0.65, brightness: 0.95)
+    }
 }
 
 struct WorkbenchButtonStyle: ButtonStyle {

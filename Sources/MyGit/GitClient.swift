@@ -277,11 +277,11 @@ struct GitClient {
     }
 
     static func commits(in worktree: String, repositoryID: UUID, limit: Int) throws -> [Commit] {
-        let output = try text(["log", "-n", String(limit), "--pretty=format:%H%x1f%an%x1f%at%x1f%s%x1e"], in: worktree)
+        let output = try text(["log", "-n", String(limit), "--pretty=format:%H%x1f%cn%x1f%ct%x1f%s%x1e"], in: worktree)
         return output.split(separator: "\u{1e}").compactMap { record in
             let fields = record.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\u{1f}", omittingEmptySubsequences: false)
             guard fields.count == 4, let epoch = TimeInterval(fields[2]) else { return nil }
-            return Commit(repositoryID: repositoryID, hash: String(fields[0]), author: String(fields[1]),
+            return Commit(repositoryID: repositoryID, hash: String(fields[0]), committer: String(fields[1]),
                           date: Date(timeIntervalSince1970: epoch), subject: String(fields[3]))
         }
     }

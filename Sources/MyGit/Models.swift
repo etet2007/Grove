@@ -98,9 +98,18 @@ struct Commit: Identifiable, Hashable {
     var id: String { repositoryID.uuidString + ":" + hash }
     let repositoryID: UUID
     let hash: String
-    let author: String
+    let committer: String
     let date: Date
     let subject: String
+
+    var formattedDate: String { Self.dateFormatter.string(from: date) }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
 }
 
 struct RepositorySnapshot: Identifiable {

@@ -701,9 +701,16 @@ struct ContentView: View {
                         HStack {
                             Text(model.selectedProject?.repositories.first(where: { $0.id == commit.repositoryID })?.name ?? "仓库")
                             Text(commit.hash.prefix(7))
-                            Text(commit.date, style: .relative)
                         }
                         .font(.system(size: 10)).foregroundStyle(WorkbenchStyle.muted)
+                        HStack(spacing: 6) {
+                            Image(systemName: "person")
+                                .foregroundStyle(WorkbenchStyle.committerColor(commit.committer))
+                            Text(commit.committer).lineLimit(1).help(commit.committer)
+                            Spacer(minLength: 8)
+                            Text(commit.formattedDate).fixedSize()
+                        }
+                        .font(.system(size: 11)).foregroundStyle(WorkbenchStyle.muted)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
@@ -1023,7 +1030,12 @@ private struct DetailPaneView: View {
             }
             .onChange(of: state.diffMode) { _, _ in model.loadDetail(tab: tab) }
         } else if let commit = state.selectedCommit {
-            Text(commit.subject).font(.headline).lineLimit(1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(commit.subject).font(.headline).lineLimit(1)
+                Text("\(commit.committer) · \(commit.formattedDate)")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .lineLimit(1).help("\(commit.committer) · \(commit.formattedDate)")
+            }
         } else {
             Text(AppLocalization.text("选择文件或提交")).foregroundStyle(.secondary)
         }
