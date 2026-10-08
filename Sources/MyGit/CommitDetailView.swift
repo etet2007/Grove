@@ -3,6 +3,7 @@ import SwiftUI
 struct CommitDetailView: View {
     let patch: CommitPatch
     let layout: DetailLayout
+    let checkoutPath: String?
     @State private var selectedIndex = 0
     @State private var showAll = false
 
@@ -54,6 +55,7 @@ struct CommitDetailView: View {
                             }
                             .buttonStyle(.plain)
                             .help(file.path)
+                            .finderContextMenu(path: localPath(file.path))
                             .id(file.id)
                         }
                     }
@@ -68,6 +70,7 @@ struct CommitDetailView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(selected.path).appFont(size: 12, weight: .semibold)
                             .lineLimit(1).truncationMode(.middle).help(selected.path)
+                            .finderContextMenu(path: localPath(selected.path))
                         Text(fileDescription).appFont(size: 11).foregroundStyle(.secondary)
                             .lineLimit(1).help(fileDescription)
                     }
@@ -107,6 +110,10 @@ struct CommitDetailView: View {
         case .deleted: .old
         default: nil
         }
+    }
+
+    private func localPath(_ path: String) -> String? {
+        checkoutPath.map { URL(fileURLWithPath: $0).appendingPathComponent(path).path }
     }
 
     private var fileDescription: String {

@@ -440,6 +440,7 @@ struct ContentView: View {
                 } label: {
                     Text(AppLocalization.text("%@ · %@", worktree.branch ?? AppLocalization.text("分离 HEAD"), worktree.isPrimary ? AppLocalization.text("主目录") : URL(fileURLWithPath: worktree.path).lastPathComponent))
                 }
+                .finderContextMenu(path: worktree.path)
             }
         } label: {
             HStack(alignment: .top, spacing: 6) {
@@ -469,6 +470,8 @@ struct ContentView: View {
         .menuIndicator(.hidden)
         .focusEffectDisabled()
         .contextMenu {
+            FinderMenuItem(path: snapshot?.selected?.path ?? repository.path)
+            Divider()
             if let project = model.selectedProject {
                 Menu("移动到仓库组") {
                     ForEach(project.groups) { group in
@@ -621,6 +624,9 @@ struct ContentView: View {
                                         ChangedFileRow(file: file, selected: model.selectedFile?.id == file.id)
                                     }
                                     .buttonStyle(.plain)
+                                    .finderContextMenu(path: snapshot.selected.map {
+                                        URL(fileURLWithPath: $0.path).appendingPathComponent(file.path).path
+                                    })
                                 }
                             }
                             .padding(.leading, 16).padding(.trailing, 6)
@@ -640,6 +646,7 @@ struct ContentView: View {
         let hasContent = !snapshot.files.isEmpty || snapshot.error != nil
         let conflicts = snapshot.files.filter { $0.changeKind == .conflict }.count
         return Button {
+            guard hasContent else { return }
             if collapsed { collapsedChangeRepositories.remove(repositoryID) }
             else { collapsedChangeRepositories.insert(repositoryID) }
         } label: {
@@ -684,7 +691,7 @@ struct ContentView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(MergeRequestRowStyle())
-        .disabled(!hasContent)
+        .finderContextMenu(path: snapshot.selected?.path ?? snapshot.repository.path)
         .help(snapshot.repository.name + " · " + (snapshot.selected?.branch ?? AppLocalization.text("分离 HEAD")))
         .accessibilityLabel(snapshot.repository.name)
         .accessibilityValue(hasContent ? AppLocalization.text(collapsed ? "已折叠" : "已展开") : AppLocalization.text("无修改"))
@@ -988,6 +995,7 @@ private struct DetailPaneView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12).padding(.top, 12)
                     .help(file.path)
+                    .finderContextMenu(path: filePath(file.path, repositoryID: file.repositoryID))
             }
             ViewThatFits(in: .horizontal) {
                 HStack {
@@ -1004,7 +1012,8 @@ private struct DetailPaneView: View {
             .padding(12)
             Divider()
             if let commit = state.selectedCommit, let patch = state.commitPatch, !patch.files.isEmpty {
-                CommitDetailView(patch: patch, layout: detailLayout)
+                CommitDetailView(patch: patch, layout: detailLayout,
+                                 checkoutPath: model.snapshots.first { $0.repository.id == commit.repositoryID }?.selected?.path)
                     .id(commit.id)
             } else if detailLayout == .split, let preview = state.imagePreview {
                 ImageDiffView(preview: preview, oldTitle: oldDiffTitle, newTitle: newDiffTitle)
@@ -1021,6 +1030,12 @@ private struct DetailPaneView: View {
         }
         .frame(minWidth: 430)
         .background(WorkbenchStyle.background)
+    }
+
+    private func filePath(_ path: String, repositoryID: UUID) -> String? {
+        model.snapshots.first { $0.repository.id == repositoryID }?.selected.map {
+            URL(fileURLWithPath: $0.path).appendingPathComponent(path).path
+        }
     }
 
     @ViewBuilder private var detailHeading: some View {
