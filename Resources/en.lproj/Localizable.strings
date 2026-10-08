@@ -135,3 +135,10 @@
 "读取失败" = "Read Failed";
 "已折叠" = "Collapsed";
 "已展开" = "Expanded";
+"应用字体大小" = "App Font Size";
+"调整侧边栏、列表和 diff 的字体大小，立即应用于所有窗口。" = "Adjust fonts in the sidebar, lists, and diffs. Changes apply immediately to all windows.";
+"预览" = "Preview";
+"工作树与提交记录" = "Worktrees and Commit History";
+"恢复默认字号" = "Restore Default Font Size";
+"语言" = "Language";
+"语言修改将在重启应用后生效。" = "Language changes take effect after restarting the app.";

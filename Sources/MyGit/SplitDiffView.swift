@@ -6,6 +6,7 @@ struct SplitDiffView: View {
     let newTitle: String
     let resetID: String
     var singleSide: DiffSide? = nil
+    @AppStorage(AppTypography.fontSizeKey) private var fontSize = AppTypography.defaultFontSize
     @State private var horizontalSync = HorizontalScrollSync()
 
     var body: some View {
@@ -13,7 +14,7 @@ struct SplitDiffView: View {
             let paneWidth = singleSide == nil ? max(200, (geometry.size.width - 1) / 2) : geometry.size.width
             let contentWidth = max(paneWidth, min(16_000, CGFloat(diff.rows.flatMap { [$0.old, $0.new] }.compactMap { $0?.text }.map { text in
                 text.unicodeScalars.reduce(0) { $0 + ($1.value > 127 ? 2 : 1) }
-            }.max() ?? 0) * 7.25 + 72))
+            }.max() ?? 0) * 7.25 * AppTypography.scale(for: fontSize) + 72 * AppTypography.scale(for: fontSize)))
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
                     if singleSide != .new { title(oldTitle).frame(width: paneWidth) }
@@ -33,7 +34,7 @@ struct SplitDiffView: View {
 
     private func title(_ value: String) -> some View {
         Text(value)
-            .font(.callout.weight(.semibold))
+            .appFont(size: 12, weight: .semibold)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
@@ -45,6 +46,7 @@ struct SplitDiffView: View {
             rows: diff.rows,
             lines: lines,
             contentWidth: contentWidth,
+            fontScale: AppTypography.scale(for: fontSize),
             side: side,
             sync: horizontalSync
         )
@@ -56,28 +58,30 @@ private struct DiffRowsColumn: View {
     let rows: ArraySlice<DiffRow>
     let lines: KeyPath<DiffRow, DiffLine?>
     let width: CGFloat
+    var fontScale: CGFloat = 1
+    private var rowHeight: CGFloat { 21 * fontScale }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(rows) { row in line(row[keyPath: lines], width: width) }
         }
-        .frame(width: width, height: CGFloat(rows.count) * 21, alignment: .topLeading)
+        .frame(width: width, height: CGFloat(rows.count) * rowHeight, alignment: .topLeading)
     }
 
     private func line(_ value: DiffLine?, width: CGFloat) -> some View {
         HStack(spacing: 0) {
             Text(value?.number.map(String.init) ?? "")
                 .foregroundStyle(.tertiary)
-                .frame(width: 48, alignment: .trailing)
-                .padding(.trailing, 12)
+                .frame(width: 48 * fontScale, alignment: .trailing)
+                .padding(.trailing, 12 * fontScale)
             Text(value?.text ?? "")
                 .foregroundStyle(value?.kind == .heading || value?.kind == .hunk ? .secondary : .primary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 0)
         }
-        .font(.system(size: 12, design: .monospaced))
-        .frame(width: width, height: 21, alignment: .leading)
+        .font(.system(size: 12 * fontScale, design: .monospaced))
+        .frame(width: width, height: rowHeight, alignment: .leading)
         .background(background(for: value?.kind))
     }
 
@@ -130,7 +134,8 @@ final class HorizontalScrollSync {
 // and a small buffer. A LazyVStack inside a full-height NSHostingView would still
 // see the entire document as its viewport.
 final class VirtualizedDiffDocumentView: NSView {
-    static let rowHeight: CGFloat = 21
+    private var fontScale: CGFloat = 1
+    private var rowHeight: CGFloat { 21 * fontScale }
     private let lines: KeyPath<DiffRow, DiffLine?>
     private var rows: [DiffRow] = []
     private var columnWidth: CGFloat = 0
@@ -149,12 +154,13 @@ final class VirtualizedDiffDocumentView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func setContent(rows: [DiffRow], width: CGFloat) {
-        let changed = self.rows != rows || columnWidth != width
+    func setContent(rows: [DiffRow], width: CGFloat, fontScale: CGFloat = 1) {
+        let changed = self.rows != rows || columnWidth != width || self.fontScale != fontScale
         guard changed else { return }
         self.rows = rows
         columnWidth = width
-        frame.size = NSSize(width: width, height: CGFloat(rows.count) * Self.rowHeight)
+        self.fontScale = fontScale
+        frame.size = NSSize(width: width, height: CGFloat(rows.count) * rowHeight)
         updateVisibleRows(force: true)
     }
 
@@ -166,14 +172,14 @@ final class VirtualizedDiffDocumentView: NSView {
     func updateVisibleRows(force: Bool = false) {
         guard let scrollView = enclosingScrollView else { return }
         let viewport = scrollView.documentVisibleRect
-        let first = min(rows.count, max(0, Int(floor(viewport.minY / Self.rowHeight)) - 8))
-        let last = min(rows.count, max(first, Int(ceil(viewport.maxY / Self.rowHeight)) + 8))
+        let first = min(rows.count, max(0, Int(floor(viewport.minY / rowHeight)) - 8))
+        let last = min(rows.count, max(first, Int(ceil(viewport.maxY / rowHeight)) + 8))
         let range = first..<last
         guard force || range != renderedRowRange else { return }
         renderedRowRange = range
-        host.rootView = DiffRowsColumn(rows: rows[range], lines: lines, width: columnWidth)
-        host.frame = NSRect(x: 0, y: CGFloat(first) * Self.rowHeight,
-                            width: columnWidth, height: CGFloat(range.count) * Self.rowHeight)
+        host.rootView = DiffRowsColumn(rows: rows[range], lines: lines, width: columnWidth, fontScale: fontScale)
+        host.frame = NSRect(x: 0, y: CGFloat(first) * rowHeight,
+                            width: columnWidth, height: CGFloat(range.count) * rowHeight)
     }
 }
 
@@ -181,6 +187,7 @@ private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
     let rows: [DiffRow]
     let lines: KeyPath<DiffRow, DiffLine?>
     let contentWidth: CGFloat
+    let fontScale: CGFloat
     let side: DiffSide
     let sync: HorizontalScrollSync
 
@@ -202,7 +209,7 @@ private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let document = scrollView.documentView as? VirtualizedDiffDocumentView else { return }
-        document.setContent(rows: rows, width: contentWidth)
+        document.setContent(rows: rows, width: contentWidth, fontScale: fontScale)
         document.updateVisibleRows()
     }
 

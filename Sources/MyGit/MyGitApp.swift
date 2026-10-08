@@ -8,6 +8,10 @@ import SwiftUI
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unifiedCompact)
         .commands { WorktreeCommands() }
+
+        Settings {
+            SettingsView()
+        }
     }
 }
 
@@ -17,6 +21,7 @@ private struct MyGitWindow: View {
 
     var body: some View {
         ContentView()
+            .appFont(size: 12)
             .environmentObject(model)
             .focusedSceneValue(\.myGitModel, model)
             .background(WindowTitleHider())

@@ -32,7 +32,7 @@ struct WorkbenchButtonStyle: ButtonStyle {
 
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: .medium))
+            .appFont(size: 12, weight: .medium)
             .foregroundStyle(emphasized ? Color.white : Color.primary)
             .padding(.horizontal, 10)
             .frame(height: 26)
@@ -69,7 +69,7 @@ struct WorkbenchTextField: View {
                 }
                 .accessibilityLabel(Text(LocalizedStringKey(title)))
         }
-        .font(.system(size: 12))
+        .appFont(size: 12)
         .padding(.horizontal, 10)
         .frame(height: 36)
         .background(WorkbenchStyle.background, in: RoundedRectangle(cornerRadius: 7))
@@ -89,7 +89,7 @@ struct WorkbenchSegments<Value: Hashable>: View {
             ForEach(values, id: \.self) { value in
                 Button { selection = value } label: {
                     Text(label(value))
-                        .font(.system(size: 11, weight: selection == value ? .semibold : .medium))
+                        .appFont(size: 11, weight: selection == value ? .semibold : .medium)
                         .foregroundStyle(selection == value ? WorkbenchStyle.accent : WorkbenchStyle.muted)
                         .padding(.horizontal, 9)
                         .frame(height: 26)

@@ -18,7 +18,7 @@ struct CommitDetailView: View {
                 Button(AppLocalization.text(showAll ? "Return to Single File" : "Show All")) { showAll.toggle() }
                     .buttonStyle(WorkbenchButtonStyle())
             }
-            .font(.system(size: 12))
+            .appFont(size: 12)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             ScrollViewReader { proxy in
@@ -31,20 +31,20 @@ struct CommitDetailView: View {
                             } label: {
                                 HStack(alignment: .top, spacing: 10) {
                                     Text(AppLocalization.text(file.change.badge))
-                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                        .appFont(size: 11, weight: .bold, design: .monospaced)
                                         .foregroundStyle(changeColor(file.change))
                                         .frame(width: 22, height: 22)
                                         .background(changeColor(file.change).opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(file.name).font(.system(size: 12, weight: .semibold))
+                                        Text(file.name).appFont(size: 12, weight: .semibold)
                                             .lineLimit(1).truncationMode(.middle)
                                         Text(file.directory.isEmpty ? AppLocalization.text("仓库根目录") : file.directory)
-                                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                                            .appFont(size: 10).foregroundStyle(.secondary)
                                             .lineLimit(1).truncationMode(.middle)
                                     }
                                     Spacer(minLength: 4)
                                     if file.isBinary {
-                                        Text(AppLocalization.text("二进制")).font(.system(size: 11)).foregroundStyle(.secondary)
+                                        Text(AppLocalization.text("二进制")).appFont(size: 11).foregroundStyle(.secondary)
                                     } else { counts(additions: file.additions, deletions: file.deletions) }
                                 }
                                 .padding(.horizontal, 10).padding(.vertical, 7)
@@ -66,14 +66,14 @@ struct CommitDetailView: View {
             if !showAll {
                 HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(selected.path).font(.system(size: 12, weight: .semibold))
+                        Text(selected.path).appFont(size: 12, weight: .semibold)
                             .lineLimit(1).truncationMode(.middle).help(selected.path)
-                        Text(fileDescription).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(fileDescription).appFont(size: 11).foregroundStyle(.secondary)
                             .lineLimit(1).help(fileDescription)
                     }
                     Spacer(minLength: 0)
                     Text("\(selectedIndex + 1) / \(patch.files.count)")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .appFont(size: 11).foregroundStyle(.secondary)
                     Button { selectedIndex -= 1 } label: { Image(systemName: "chevron.up") }
                         .disabled(selectedIndex == 0).help(AppLocalization.text("上一个文件"))
                     Button { selectedIndex += 1 } label: { Image(systemName: "chevron.down") }
@@ -91,7 +91,7 @@ struct CommitDetailView: View {
             } else {
                 ScrollView([.vertical, .horizontal]) {
                     Text(showAll ? patch.files.map(\.patch).joined(separator: "\n") : selected.patch)
-                        .font(.system(size: 12, design: .monospaced))
+                        .appFont(size: 12, design: .monospaced)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .topLeading).padding(16)
                 }
@@ -125,7 +125,7 @@ struct CommitDetailView: View {
             Text("+\(additions)").foregroundStyle(.green)
             Text("−\(deletions)").foregroundStyle(.red)
         }
-        .font(.system(size: 11, weight: .medium, design: .monospaced))
+        .appFont(size: 11, weight: .medium, design: .monospaced)
     }
 
     private func changeColor(_ change: CommitFilePatch.Change) -> Color {
