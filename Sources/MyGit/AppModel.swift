@@ -28,19 +28,40 @@ private struct HistoryCacheKey: Hashable {
     let limit: Int
 }
 
+private struct MergeRequestCacheKey: Hashable {
+    let path: String
+    let branch: String
+}
+
+private struct MergeRequestCacheEntry {
+    let url: URL?
+}
+
 @MainActor final class DetailState: ObservableObject {
     @Published var selectedFile: ChangedFile?
     @Published var selectedCommit: Commit?
     @Published var diffMode: DiffMode = .unstaged
     @Published var detail = ""
+    @Published var splitDiff = SplitDiff(rows: [], hasChanges: false)
     @Published var commitPatch: CommitPatch?
     @Published var imagePreview: ImageDiffPreview?
     var generation = 0
+    var task: Task<Void, Never>?
+    var readSession: GitReadSession?
+
+    func cancelRead() {
+        task?.cancel()
+        readSession?.cancel()
+        task = nil
+        readSession = nil
+    }
 
     func clear() {
+        cancelRead()
         generation += 1
         selectedFile = nil; selectedCommit = nil; detail = ""
         commitPatch = nil; imagePreview = nil
+        splitDiff = SplitDiff(rows: [], hasChanges: false)
     }
 }
 
@@ -69,10 +90,22 @@ private struct HistoryCacheKey: Hashable {
     @Published private(set) var isRefreshing = false
     @Published var notice: String?
     @Published var error: String?
-    @Published var activeTab = 0
+    @Published var activeTab = 0 {
+        didSet {
+            if activeTab == 0 && changesDetailNeedsRefresh {
+                changesDetailNeedsRefresh = false
+                loadDetail(showLoading: false, tab: 0)
+            }
+        }
+    }
     @Published var showQuickSwitch = false
     @Published var focusedRepositoryID: UUID?
 
+    private(set) var completedRefreshCount = 0
+    private(set) var lastRefreshCommandCounts: [String: Int] = [:]
+    private var mergeRequestCache: [MergeRequestCacheKey: MergeRequestCacheEntry] = [:]
+    private var refreshTask: Task<Void, Never>?
+    private var refreshSession: GitReadSession?
     private var refreshGeneration = 0
     private var commitLimit = 30
     // Memory only: retain recent views without persisting repository contents.
@@ -86,6 +119,7 @@ private struct HistoryCacheKey: Hashable {
     }
 
     private func restoreCachedView() {
+        changesDetailNeedsRefresh = false
         detailStates.forEach { $0.clear() }
         if let key = currentCacheKey, var entry = groupCache[key] {
             entry.lastUsed = Date()
@@ -105,6 +139,12 @@ private struct HistoryCacheKey: Hashable {
             groupCache.removeValue(forKey: oldest)
         }
     }
+    private var changesDetailNeedsRefresh = false
+    private let changeMonitor = RepositoryChangeMonitor()
+    private var debounceTask: Task<Void, Never>?
+    private var pendingPaths: Set<String> = []
+    private var refreshRoots: [String] = []
+    private var lastFullRefresh = Date.distantPast
     private let configURL: URL
 
     init(configURL: URL? = nil) {
@@ -119,6 +159,7 @@ private struct HistoryCacheKey: Hashable {
         detailObservers = detailStates.map { state in
             state.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         }
+        changeMonitor.onChange = { [weak self] paths in self?.repositoryPathsChanged(paths) }
         refresh()
     }
 
@@ -265,7 +306,46 @@ private struct HistoryCacheKey: Hashable {
         refresh()
     }
 
-    func refresh(useCachedHistory: Bool = false) {
+    private func repositoryPathsChanged(_ paths: [String]) {
+        // Coalesce build/save bursts to a few checkout/metadata roots. FSEvents
+        // already supplies real paths, so do no per-file disk IO on the UI thread.
+        let affected = refreshRoots.filter { root in
+            paths.contains { pathIsInside($0, root: root) || pathIsInside(root, root: $0) }
+        }
+        guard !affected.isEmpty else { return }
+        pendingPaths.formUnion(affected)
+        debounceTask?.cancel()
+        debounceTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+            self?.automaticRefresh()
+        }
+    }
+
+    func automaticRefresh() {
+        guard !isRefreshing else { return }
+        if Date().timeIntervalSince(lastFullRefresh) >= 30 {
+            mergeRequestCache.removeAll()
+            pendingPaths.removeAll()
+            refresh(useCachedHistory: true)
+        } else if !pendingPaths.isEmpty {
+            let paths = pendingPaths
+            pendingPaths.removeAll()
+            if snapshots.contains(where: { snapshot in
+                let metadata = gitMetadataRoot(in: snapshot.repository.path)
+                return paths.contains { pathIsInside($0, root: metadata) }
+            }) { mergeRequestCache.removeAll() }
+            refresh(useCachedHistory: true, changedPaths: paths)
+        }
+    }
+
+    func refresh(useCachedHistory: Bool = false, changedPaths: Set<String>? = nil) {
+        let changedPaths = changedPaths.map { Set($0.map { canonicalFilesystemPath($0) }) }
+        if changedPaths == nil {
+            lastFullRefresh = Date()
+            pendingPaths.removeAll()
+        }
+        refreshTask?.cancel()
+        refreshSession?.cancel()
         refreshGeneration += 1
         let generation = refreshGeneration
         guard let project = selectedProject else {
@@ -274,19 +354,23 @@ private struct HistoryCacheKey: Hashable {
         }
         isRefreshing = true
         let projectID = project.id
-        Task.detached(priority: .utility) {
-            let scans = project.repositories.map { repository -> WorktreeScan in
-                do { return WorktreeScan(repository: repository, worktrees: try GitClient.worktrees(in: repository.path), error: nil) }
-                catch { return WorktreeScan(repository: repository, worktrees: [], error: error.localizedDescription) }
+        let session = GitReadSession()
+        refreshSession = session
+        refreshTask = Task.detached(priority: .utility) {
+            let scans = await GitClient.$readSession.withValue(session) {
+                await boundedConcurrentMap(project.repositories) { repository -> WorktreeScan in
+                    do { return WorktreeScan(repository: repository, worktrees: try GitClient.worktrees(in: repository.path), error: nil) }
+                    catch { return WorktreeScan(repository: repository, worktrees: [], error: error.localizedDescription) }
+                }
             }
             await MainActor.run {
                 guard self.refreshGeneration == generation, self.selectedProjectID == projectID else { return }
-                self.apply(scans: scans, generation: generation, useCachedHistory: useCachedHistory)
+                self.apply(scans: scans, generation: generation, useCachedHistory: useCachedHistory, session: session, changedPaths: changedPaths)
             }
         }
     }
 
-    private func apply(scans: [WorktreeScan], generation: Int, useCachedHistory: Bool) {
+    private func apply(scans: [WorktreeScan], generation: Int, useCachedHistory: Bool, session: GitReadSession, changedPaths: Set<String>?) {
         guard let index = projectIndex else { return }
         let projectID = projects[index].id
         let originalProject = projects[index]
@@ -333,48 +417,85 @@ private struct HistoryCacheKey: Hashable {
             selections.append((scan.repository, scan.worktrees, selected, fallback, scan.error))
         }
         if projects[index] != originalProject { save() }
+        refreshRoots = selections.compactMap { $0.2?.path } + scans.map { gitMetadataRoot(in: $0.repository.path) }
+        changeMonitor.watch(scans.flatMap { scan in
+            [scan.repository.path, gitMetadataRoot(in: scan.repository.path)] + scan.worktrees.map(\.path)
+        })
+        let previousSnapshots = snapshots
+        let pathsToRead = Set(selections.compactMap { repository, _, selected, _, _ -> String? in
+            guard let selected else { return nil }
+            guard let changedPaths else { return selected.path }
+            let metadata = gitMetadataRoot(in: repository.path)
+            return changedPaths.contains { pathIsInside($0, root: selected.path) || pathIsInside($0, root: metadata) }
+                || !previousSnapshots.contains(where: { $0.repository.id == repository.id && $0.selected == selected })
+                ? selected.path : nil
+        })
         let limit = commitLimit
         let cachedHistory = useCachedHistory ? historyCache : [:]
-        Task.detached(priority: .utility) {
-            let snapshots = selections.map { repository, worktrees, selected, fallback, scanError -> RepositorySnapshot in
-                guard let selected else {
-                    return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: nil,
-                                              isFallback: false, files: [], error: scanError ?? AppLocalization.text("没有有效的检出目录"),
-                                              mergeRequestURL: nil)
-                }
-                let mergeRequestURL = selected.branch.flatMap {
-                    GitClient.mergeRequestURL(in: selected.path, branch: $0)
-                }
-                do {
-                    return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: selected,
-                                              isFallback: fallback, files: try GitClient.changedFiles(in: selected.path, repositoryID: repository.id),
-                                              error: scanError, mergeRequestURL: mergeRequestURL)
-                } catch {
-                    return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: selected,
-                                              isFallback: fallback, files: [], error: error.localizedDescription,
-                                              mergeRequestURL: mergeRequestURL)
+        let cachedMergeRequests = useCachedHistory ? mergeRequestCache : [:]
+        refreshTask = Task.detached(priority: .utility) {
+            let snapshots = await GitClient.$readSession.withValue(session) {
+                await boundedConcurrentMap(selections) { selection -> RepositorySnapshot in
+                    let (repository, worktrees, selected, fallback, scanError) = selection
+                    guard let selected else {
+                        return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: nil,
+                                                  isFallback: false, files: [], error: scanError ?? AppLocalization.text("没有有效的检出目录"),
+                                                  mergeRequestURL: nil)
+                    }
+                    let mergeRequestURL = selected.branch.flatMap {
+                        let key = MergeRequestCacheKey(path: selected.path, branch: $0)
+                        if let cached = cachedMergeRequests[key] { return cached.url }
+                        return GitClient.mergeRequestURL(in: selected.path, branch: $0)
+                    }
+                    if !pathsToRead.contains(selected.path),
+                       let previous = previousSnapshots.first(where: { $0.repository.id == repository.id && $0.selected == selected }),
+                       previous.error == nil {
+                        return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: selected,
+                                                  isFallback: fallback, files: previous.files,
+                                                  error: scanError, mergeRequestURL: mergeRequestURL)
+                    }
+                    do {
+                        return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: selected,
+                                                  isFallback: fallback, files: try GitClient.changedFiles(in: selected.path, repositoryID: repository.id),
+                                                  error: scanError, mergeRequestURL: mergeRequestURL)
+                    } catch {
+                        return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: selected,
+                                                  isFallback: fallback, files: [], error: error.localizedDescription,
+                                                  mergeRequestURL: mergeRequestURL)
+                    }
                 }
             }
-            var commits: [Commit] = []
-            var loadedHistory: [HistoryCacheKey: [Commit]] = [:]
-            for snapshot in snapshots {
-                guard let selected = snapshot.selected else { continue }
-                let key = HistoryCacheKey(repositoryID: snapshot.repository.id, path: selected.path,
-                                          head: selected.head, limit: limit)
-                // Failed reads are retried; never turn an error into a cached empty history.
-                if let history = cachedHistory[key]
-                    ?? (try? GitClient.commits(in: selected.path, repositoryID: snapshot.repository.id, limit: limit)) {
-                    commits += history
-                    loadedHistory[key] = history
+            // Publish changes before history finishes so the file list is usable sooner.
+            await MainActor.run {
+                guard self.refreshGeneration == generation, self.selectedProjectID == projectID else { return }
+                if self.snapshots != snapshots { self.snapshots = snapshots }
+            }
+            let histories = await GitClient.$readSession.withValue(session) {
+                await boundedConcurrentMap(snapshots) { snapshot -> (HistoryCacheKey, [Commit])? in
+                    guard let selected = snapshot.selected else { return nil }
+                    let key = HistoryCacheKey(repositoryID: snapshot.repository.id, path: selected.path,
+                                              head: selected.head, limit: limit)
+                    guard let history = cachedHistory[key]
+                        ?? (try? GitClient.commits(in: selected.path, repositoryID: snapshot.repository.id, limit: limit, revision: selected.head)) else { return nil }
+                    return (key, history)
                 }
             }
+            var commits = histories.compactMap { $0 }.flatMap { $0.1 }
+            let loadedHistory = Dictionary(uniqueKeysWithValues: histories.compactMap { $0 })
             commits.sort { $0.date > $1.date }
             let sortedCommits = commits
             let newHistory = loadedHistory
             await MainActor.run {
                 guard self.refreshGeneration == generation, self.selectedProjectID == projectID else { return }
-                self.snapshots = snapshots
-                self.commits = sortedCommits
+                self.completedRefreshCount += 1
+                self.lastRefreshCommandCounts = session.counts
+                if self.mergeRequestCache.count > 128 { self.mergeRequestCache.removeAll() }
+                for snapshot in snapshots {
+                    if let selected = snapshot.selected, let branch = selected.branch {
+                        self.mergeRequestCache[MergeRequestCacheKey(path: selected.path, branch: branch)] = MergeRequestCacheEntry(url: snapshot.mergeRequestURL)
+                    }
+                }
+                if self.commits != sortedCommits { self.commits = sortedCommits }
                 if self.historyCache.count + newHistory.count > 128 { self.historyCache.removeAll() }
                 self.historyCache.merge(newHistory) { _, new in new }
                 self.cacheCurrentView()
@@ -383,7 +504,10 @@ private struct HistoryCacheKey: Hashable {
                 if let file = changes.selectedFile {
                     if let current = snapshots.flatMap(\.files).first(where: { $0.id == file.id }) {
                         if current != file { changes.selectedFile = current }
-                        self.loadDetail(showLoading: false, tab: 0)
+                        if snapshots.contains(where: { $0.repository.id == file.repositoryID && $0.selected.map { pathsToRead.contains($0.path) } == true }) {
+                            if self.activeTab == 0 { self.loadDetail(showLoading: false, tab: 0) }
+                            else { self.changesDetailNeedsRefresh = true }
+                        }
                     } else { changes.clear() }
                 }
             }
@@ -392,6 +516,7 @@ private struct HistoryCacheKey: Hashable {
 
     func loadDetail(showLoading: Bool = true, tab: Int? = nil) {
         let state = detailStates[tab ?? activeTab]
+        state.cancelRead()
         state.generation += 1
         let generation = state.generation
         let file = state.selectedFile
@@ -403,21 +528,35 @@ private struct HistoryCacheKey: Hashable {
             state.detail = AppLocalization.text("正在读取…")
             state.imagePreview = nil
             state.commitPatch = nil
+            state.splitDiff = SplitDiff(rows: [], hasChanges: false)
         }
-        Task.detached(priority: .utility) {
-            let output: String
-            let preview = file.flatMap { GitClient.imagePreview(for: $0, in: path, mode: mode) }
-            do {
-                if let file { output = try GitClient.diff(for: file, in: path, mode: mode) }
-                else if let commit { output = try GitClient.show(commit, in: path) }
-                else { output = "" }
-            } catch { output = error.localizedDescription }
-            let patch = commit != nil ? CommitPatch.parse(output) : nil
-            await MainActor.run {
-                guard state.generation == generation else { return }
-                if state.detail != output { state.detail = output }
-                state.imagePreview = preview
-                state.commitPatch = patch
+        let previousDetail = state.detail
+        let previousDiff = state.splitDiff
+        let session = GitReadSession()
+        state.readSession = session
+        state.task = Task.detached(priority: .utility) {
+            await GitClient.$readSession.withValue(session) {
+                let output: String
+                let preview = file.flatMap { GitClient.imagePreview(for: $0, in: path, mode: mode) }
+                do {
+                    if let file { output = try GitClient.diff(for: file, in: path, mode: mode) }
+                    else if let commit { output = try GitClient.show(commit, in: path) }
+                    else { output = "" }
+                } catch { output = error.localizedDescription }
+                guard !Task.isCancelled, !session.isCancelled else { return }
+                let patch = commit != nil ? CommitPatch.parse(output) : nil
+                let splitDiff = file != nil
+                    ? (output == previousDetail ? previousDiff : SplitDiff.parse(output))
+                    : SplitDiff(rows: [], hasChanges: false)
+                await MainActor.run {
+                    guard state.generation == generation else { return }
+                    if state.detail != output {
+                        state.detail = output
+                        state.splitDiff = splitDiff
+                    }
+                    state.imagePreview = preview
+                    state.commitPatch = patch
+                }
             }
         }
     }

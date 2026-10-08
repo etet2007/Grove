@@ -252,7 +252,7 @@ struct ContentView: View {
             Button("好") { model.error = nil; model.notice = nil }
         } message: { Text(model.error ?? model.notice ?? "") }
         .onReceive(Timer.publish(every: 4, on: .main, in: .common).autoconnect()) { _ in
-            if !model.isRefreshing { model.refresh() }
+            model.automaticRefresh()
         }
     }
 
@@ -984,7 +984,7 @@ private struct DetailPaneView: View {
     var body: some View { detailPane }
 
     private var detailPane: some View {
-        let splitDiff = state.selectedCommit == nil ? SplitDiff.parse(state.detail) : SplitDiff(rows: [], hasChanges: false)
+        let splitDiff = state.splitDiff
         return VStack(spacing: 0) {
             if let file = state.selectedFile {
                 Text(file.path).font(.headline).lineLimit(1).truncationMode(.middle)

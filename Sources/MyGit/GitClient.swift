@@ -22,25 +22,74 @@ enum GitError: LocalizedError {
     }
 }
 
+// One read operation owns its child processes and command counts.
+final class GitReadSession: @unchecked Sendable {
+    private let lock = NSLock()
+    private var commands: [String: Int] = [:]
+    private var processes: [ObjectIdentifier: Process] = [:]
+    private var cancelled = false
+
+    func start(_ process: Process, command: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        guard !cancelled else { throw CancellationError() }
+        try process.run()
+        processes[ObjectIdentifier(process)] = process
+        commands[command, default: 0] += 1
+    }
+
+    func finish(_ process: Process) {
+        lock.lock(); defer { lock.unlock() }
+        processes.removeValue(forKey: ObjectIdentifier(process))
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let running = Array(processes.values)
+        lock.unlock()
+        for process in running where process.isRunning { process.terminate() }
+    }
+
+    var isCancelled: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return cancelled
+    }
+
+    var counts: [String: Int] {
+        lock.lock(); defer { lock.unlock() }
+        return commands
+    }
+}
+
 struct GitClient {
+    @TaskLocal static var readSession: GitReadSession?
+
     private static let gitURL = URL(fileURLWithPath: "/usr/bin/git")
     private static let imageExtensions: Set<String> = ["webp", "png", "jpg", "jpeg", "gif", "heic", "heif", "tif", "tiff", "bmp", "avif"]
     private static let imagePreviewLimit = 20_000_000
 
     static func run(_ args: [String], in directory: String) throws -> Data {
+        try Task.checkCancellation()
         let process = Process()
         process.executableURL = gitURL
         process.arguments = ["-C", directory] + args
         var environment = ProcessInfo.processInfo.environment
         environment["LC_ALL"] = "C"
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
         process.environment = environment
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
-        do { try process.run() }
+        do {
+            if let readSession { try readSession.start(process, command: args.first ?? "") }
+            else { try process.run() }
+        }
         catch { throw GitError.command(error.localizedDescription) }
+        defer { readSession?.finish(process) }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
+        if readSession?.isCancelled == true { throw CancellationError() }
+        try Task.checkCancellation()
         guard process.terminationStatus == 0 else {
             throw GitError.command(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
         }
@@ -161,8 +210,10 @@ struct GitClient {
         }
         // Summarize tracked changes in two batched reads, including unborn HEADs.
         // Counts include both staged and unstaged edits, matching the status list.
-        let staged = (try? run(["diff", "--cached", "--numstat", "-z", "--no-ext-diff", "--find-renames"], in: worktree)) ?? Data()
-        let unstaged = (try? run(["diff", "--numstat", "-z", "--no-ext-diff", "--find-renames"], in: worktree)) ?? Data()
+        let staged = files.contains { !$0.isUntracked && $0.hasStaged }
+            ? (try? run(["diff", "--cached", "--numstat", "-z", "--no-ext-diff", "--find-renames"], in: worktree)) ?? Data() : Data()
+        let unstaged = files.contains { !$0.isUntracked && $0.hasUnstaged }
+            ? (try? run(["diff", "--numstat", "-z", "--no-ext-diff", "--find-renames"], in: worktree)) ?? Data() : Data()
         var stats = parseNumstat(staged)
         for (path, value) in parseNumstat(unstaged) {
             let previous = stats[path]
@@ -276,8 +327,8 @@ struct GitClient {
         }
     }
 
-    static func commits(in worktree: String, repositoryID: UUID, limit: Int) throws -> [Commit] {
-        let output = try text(["log", "-n", String(limit), "--pretty=format:%H%x1f%an%x1f%at%x1f%s%x1e"], in: worktree)
+    static func commits(in worktree: String, repositoryID: UUID, limit: Int, revision: String? = nil) throws -> [Commit] {
+        let output = try text(["log", "-n", String(limit), "--pretty=format:%H%x1f%an%x1f%at%x1f%s%x1e"] + (revision.map { [$0] } ?? []), in: worktree)
         return output.split(separator: "\u{1e}").compactMap { record in
             let fields = record.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\u{1f}", omittingEmptySubsequences: false)
             guard fields.count == 4, let epoch = TimeInterval(fields[2]) else { return nil }

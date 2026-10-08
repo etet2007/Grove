@@ -34,6 +34,18 @@ final class AppModelCacheTests: XCTestCase {
         XCTAssertEqual(model.snapshots.first?.files.count, 1)
         XCTAssertEqual(model.commits.first?.subject, "initial")
 
+        let forcedCounts = model.lastRefreshCommandCounts
+        XCTAssertEqual(forcedCounts["log"], 1)
+        model.refresh(useCachedHistory: true)
+        try await waitForRefresh(model)
+        XCTAssertNil(model.lastRefreshCommandCounts["log"])
+        XCTAssertNil(model.lastRefreshCommandCounts["remote"])
+        XCTAssertNil(model.lastRefreshCommandCounts["config"])
+        print("PERF cached refresh: \(forcedCounts.values.reduce(0, +)) → \(model.lastRefreshCommandCounts.values.reduce(0, +)) Git commands")
+        model.refresh()
+        try await waitForRefresh(model)
+        XCTAssertEqual(model.lastRefreshCommandCounts["log"], 1)
+
         let file = try XCTUnwrap(model.snapshots.first?.files.first)
         let commit = try XCTUnwrap(model.commits.first)
         model.selectFile(file)

@@ -11,9 +11,7 @@ struct SplitDiffView: View {
     var body: some View {
         GeometryReader { geometry in
             let paneWidth = singleSide == nil ? max(200, (geometry.size.width - 1) / 2) : geometry.size.width
-            let contentWidth = max(paneWidth, min(16_000, CGFloat(diff.rows.flatMap { [$0.old, $0.new] }.compactMap { $0?.text }.map { text in
-                text.unicodeScalars.reduce(0) { $0 + ($1.value > 127 ? 2 : 1) }
-            }.max() ?? 0) * 7.25 + 72))
+            let contentWidth = max(paneWidth, diff.estimatedContentWidth)
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
                     if singleSide != .new { title(oldTitle).frame(width: paneWidth) }
@@ -43,6 +41,7 @@ struct SplitDiffView: View {
                       width: CGFloat, contentWidth: CGFloat) -> some View {
         SynchronizedHorizontalScrollView(
             rows: diff.rows,
+            contentID: diff.contentID,
             lines: lines,
             contentWidth: contentWidth,
             side: side,
@@ -134,6 +133,7 @@ final class VirtualizedDiffDocumentView: NSView {
     private let lines: KeyPath<DiffRow, DiffLine?>
     private var rows: [DiffRow] = []
     private var columnWidth: CGFloat = 0
+    private var contentID: UUID?
     private let host: NSHostingView<DiffRowsColumn>
     private(set) var renderedRowRange = 0..<0
 
@@ -149,10 +149,11 @@ final class VirtualizedDiffDocumentView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func setContent(rows: [DiffRow], width: CGFloat) {
-        let changed = self.rows != rows || columnWidth != width
+    func setContent(rows: [DiffRow], width: CGFloat, contentID: UUID? = nil) {
+        let changed = (contentID.map { self.contentID != $0 } ?? (self.rows != rows)) || columnWidth != width
         guard changed else { return }
         self.rows = rows
+        self.contentID = contentID
         columnWidth = width
         frame.size = NSSize(width: width, height: CGFloat(rows.count) * Self.rowHeight)
         updateVisibleRows(force: true)
@@ -179,6 +180,7 @@ final class VirtualizedDiffDocumentView: NSView {
 
 private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
     let rows: [DiffRow]
+    let contentID: UUID
     let lines: KeyPath<DiffRow, DiffLine?>
     let contentWidth: CGFloat
     let side: DiffSide
@@ -202,7 +204,7 @@ private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let document = scrollView.documentView as? VirtualizedDiffDocumentView else { return }
-        document.setContent(rows: rows, width: contentWidth)
+        document.setContent(rows: rows, width: contentWidth, contentID: contentID)
         document.updateVisibleRows()
     }
 

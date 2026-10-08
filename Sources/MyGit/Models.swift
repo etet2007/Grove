@@ -103,7 +103,7 @@ struct Commit: Identifiable, Hashable {
     let subject: String
 }
 
-struct RepositorySnapshot: Identifiable {
+struct RepositorySnapshot: Identifiable, Equatable {
     var id: UUID { repository.id }
     let repository: Repository
     let worktrees: [Worktree]

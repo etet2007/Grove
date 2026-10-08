@@ -19,6 +19,21 @@ struct DiffRow: Identifiable, Equatable {
 struct SplitDiff {
     let rows: [DiffRow]
     let hasChanges: Bool
+    let contentID = UUID()
+    let estimatedContentWidth: CGFloat
+
+    init(rows: [DiffRow], hasChanges: Bool) {
+        self.rows = rows
+        self.hasChanges = hasChanges
+        var maximum = 0
+        for row in rows {
+            for line in [row.old, row.new] {
+                guard let line else { continue }
+                maximum = max(maximum, line.text.unicodeScalars.reduce(0) { $0 + ($1.value > 127 ? 2 : 1) })
+            }
+        }
+        estimatedContentWidth = min(16_000, CGFloat(maximum) * 7.25 + 72)
+    }
 
     static func parse(_ patch: String) -> SplitDiff {
         var rows: [DiffRow] = []
