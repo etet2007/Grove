@@ -181,6 +181,16 @@ final class PerformanceTests: XCTestCase {
         try await waitUntil { model.snapshots.first?.mergeRequestURL?.path == "/team/first/-/merge_requests/new" }
         _ = try GitClient.text(["remote", "set-url", "origin", "git@gitlab.example:team/second.git"], in: checkout.path)
         try await waitUntil { model.snapshots.first?.mergeRequestURL?.path == "/team/second/-/merge_requests/new" }
+        model.automaticRefreshEnabled = false
+        let backgroundCount = model.completedRefreshCount
+        try "background edit\n".write(to: checkout.appendingPathComponent("file.txt"), atomically: true, encoding: .utf8)
+        try await Task.sleep(for: .milliseconds(900))
+        XCTAssertEqual(model.completedRefreshCount, backgroundCount)
+        XCTAssertFalse(model.isRefreshing)
+        XCTAssertTrue(model.snapshots.first?.files.isEmpty == true)
+        model.automaticRefreshEnabled = true
+        model.automaticRefresh()
+        try await waitUntil { !model.isRefreshing && model.snapshots.first?.files.count == 1 }
         let linked = root.appendingPathComponent("linked")
         _ = try GitClient.text(["worktree", "add", "-b", "feature", linked.path], in: checkout.path)
         try await waitUntil { model.selectedProject?.worktreeGroups.contains { $0.branch == "feature" } == true }

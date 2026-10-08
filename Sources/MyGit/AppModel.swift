@@ -139,6 +139,7 @@ private struct MergeRequestCacheEntry {
             groupCache.removeValue(forKey: oldest)
         }
     }
+    var automaticRefreshEnabled = true
     private var changesDetailNeedsRefresh = false
     private let changeMonitor = RepositoryChangeMonitor()
     private var debounceTask: Task<Void, Never>?
@@ -314,6 +315,9 @@ private struct MergeRequestCacheEntry {
         }
         guard !affected.isEmpty else { return }
         pendingPaths.formUnion(affected)
+        if affected.contains(where: { root in snapshots.contains { gitMetadataRoot(in: $0.repository.path) == root } }) {
+            mergeRequestCache.removeAll()
+        }
         debounceTask?.cancel()
         debounceTask = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
@@ -322,7 +326,7 @@ private struct MergeRequestCacheEntry {
     }
 
     func automaticRefresh() {
-        guard !isRefreshing else { return }
+        guard automaticRefreshEnabled, !isRefreshing else { return }
         if Date().timeIntervalSince(lastFullRefresh) >= 30 {
             mergeRequestCache.removeAll()
             pendingPaths.removeAll()

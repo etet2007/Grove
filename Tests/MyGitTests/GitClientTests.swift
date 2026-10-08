@@ -2,6 +2,32 @@ import XCTest
 @testable import MyGit
 
 final class GitClientTests: XCTestCase {
+    func testHistoryUsesCommitterAndCommitTimeRatherThanAuthorMetadata() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MyGitCommitTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try GitClient.text(["init", "-b", "main"], in: root.path)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", root.path, "commit", "--allow-empty", "-m", "different metadata"]
+        var environment = ProcessInfo.processInfo.environment
+        environment["GIT_AUTHOR_NAME"] = "Original Author"
+        environment["GIT_AUTHOR_EMAIL"] = "author@example.invalid"
+        environment["GIT_AUTHOR_DATE"] = "2020-01-01T00:00:00+0000"
+        environment["GIT_COMMITTER_NAME"] = "Actual Committer"
+        environment["GIT_COMMITTER_EMAIL"] = "committer@example.invalid"
+        environment["GIT_COMMITTER_DATE"] = "2024-02-03T04:05:06+0000"
+        process.environment = environment
+        try process.run()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+
+        let commit = try XCTUnwrap(GitClient.commits(in: root.path, repositoryID: UUID(), limit: 1).first)
+        XCTAssertEqual(commit.committer, "Actual Committer")
+        XCTAssertEqual(commit.date, ISO8601DateFormatter().date(from: "2024-02-03T04:05:06Z"))
+    }
+
     func testWorktreeDiscoveryStatusAndDiff() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("MyGitTests-\(UUID().uuidString)")
         let main = root.appendingPathComponent("main")

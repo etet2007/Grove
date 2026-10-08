@@ -15,6 +15,15 @@ enum WorkbenchStyle {
         let hash = name.utf8.reduce(UInt64(5381)) { ($0 &* 33) &+ UInt64($1) }
         return palette[Int(hash % UInt64(palette.count))]
     }
+
+    static func committerColor(_ name: String) -> Color {
+        // Use a stable hash so colors survive app restarts and list reordering.
+        let hash = name.utf8.reduce(UInt64(14695981039346656037)) {
+            ($0 ^ UInt64($1)) &* 1099511628211
+        }
+        let hue = Double(hash % 3600) / 3600
+        return Color(hue: hue, saturation: 0.65, brightness: 0.95)
+    }
 }
 
 struct WorkbenchButtonStyle: ButtonStyle {
@@ -23,7 +32,7 @@ struct WorkbenchButtonStyle: ButtonStyle {
 
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: .medium))
+            .appFont(size: 12, weight: .medium)
             .foregroundStyle(emphasized ? Color.white : Color.primary)
             .padding(.horizontal, 10)
             .frame(height: 26)
@@ -60,7 +69,7 @@ struct WorkbenchTextField: View {
                 }
                 .accessibilityLabel(Text(LocalizedStringKey(title)))
         }
-        .font(.system(size: 12))
+        .appFont(size: 12)
         .padding(.horizontal, 10)
         .frame(height: 36)
         .background(WorkbenchStyle.background, in: RoundedRectangle(cornerRadius: 7))
@@ -80,7 +89,7 @@ struct WorkbenchSegments<Value: Hashable>: View {
             ForEach(values, id: \.self) { value in
                 Button { selection = value } label: {
                     Text(label(value))
-                        .font(.system(size: 11, weight: selection == value ? .semibold : .medium))
+                        .appFont(size: 11, weight: selection == value ? .semibold : .medium)
                         .foregroundStyle(selection == value ? WorkbenchStyle.accent : WorkbenchStyle.muted)
                         .padding(.horizontal, 9)
                         .frame(height: 26)

@@ -29,6 +29,24 @@ final class VirtualizedDiffTests: XCTestCase {
         XCTAssertEqual(document.renderedRowRange, 0..<0)
     }
 
+    @MainActor func testFontSizeChangeUpdatesScrollExtentAndVisibleRows() {
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 420))
+        let document = VirtualizedDiffDocumentView(lines: \.old)
+        scroll.documentView = document
+        let rows = (0..<1_000).map { index in
+            DiffRow(id: index, old: DiffLine(number: index + 1, text: "line", kind: .context), new: nil)
+        }
+        document.setContent(rows: rows, width: 1_000)
+        let originalCount = document.renderedRowRange.count
+        document.setContent(rows: rows, width: 1_000, fontScale: AppTypography.scale(for: 18))
+        XCTAssertEqual(document.frame.height, 31_500)
+        XCTAssertLessThan(document.renderedRowRange.count, originalCount)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 31_080))
+        document.updateVisibleRows()
+        XCTAssertEqual(document.renderedRowRange.upperBound, 1_000)
+        XCTAssertTrue(document.renderedRowRange.contains(999))
+    }
+
     @MainActor func testVerticalScrollStaysAlignedFromEitherSide() {
         let old = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 420))
         let new = NSScrollView(frame: old.frame)

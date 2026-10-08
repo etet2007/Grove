@@ -32,7 +32,7 @@ struct SplitDiff {
                 maximum = max(maximum, line.text.unicodeScalars.reduce(0) { $0 + ($1.value > 127 ? 2 : 1) })
             }
         }
-        estimatedContentWidth = min(16_000, CGFloat(maximum) * 7.25 + 72)
+        estimatedContentWidth = CGFloat(maximum) * 7.25 + 72
     }
 
     static func parse(_ patch: String) -> SplitDiff {

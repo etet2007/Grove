@@ -8,19 +8,41 @@ import SwiftUI
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unifiedCompact)
         .commands { WorktreeCommands() }
+
+        Settings {
+            SettingsView()
+        }
     }
 }
 
 private struct MyGitWindow: View {
     @StateObject private var model = AppModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ContentView()
+            .appFont(size: 12)
             .environmentObject(model)
             .focusedSceneValue(\.myGitModel, model)
             .background(WindowTitleHider())
             .frame(minWidth: 1000, minHeight: 650)
             .preferredColorScheme(.dark)
+            .onChange(of: scenePhase) { _, phase in
+                model.automaticRefreshEnabled = phase == .active
+                if phase == .active && !model.isRefreshing {
+                    model.refresh()
+                }
+            }
+            .task(id: scenePhase) {
+                model.automaticRefreshEnabled = scenePhase == .active
+                guard scenePhase == .active else { return }
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(10)) }
+                    catch { return }
+                    guard !Task.isCancelled, scenePhase == .active else { return }
+                    if !model.isRefreshing { model.refresh(useCachedHistory: true) }
+                }
+            }
     }
 }
 

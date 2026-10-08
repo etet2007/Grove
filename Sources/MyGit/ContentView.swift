@@ -28,7 +28,7 @@ private struct IconActionButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 13, weight: .medium))
+                .appFont(size: 13, weight: .medium)
                 .foregroundStyle(isHovered ? Color.primary : WorkbenchStyle.muted)
                 .frame(width: 28, height: 28)
                 .background(isHovered ? WorkbenchStyle.raised : Color.clear)
@@ -67,7 +67,7 @@ private struct WorkbenchMenu<Content: View, Label: View>: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) { content() }
                     .buttonStyle(PickerChoiceStyle { isMenuOpen = false })
-                    .font(.system(size: 12))
+                    .appFont(size: 12)
                     .padding(8)
             }
             .frame(width: 320)
@@ -128,12 +128,12 @@ private struct WorkbenchTabButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 12))
+                Image(systemName: icon).appFont(size: 12)
                     .foregroundStyle(selected ? WorkbenchStyle.accent : WorkbenchStyle.muted)
                 Text(AppLocalization.text(title))
                 if let count {
                     Text("\(count)")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .appFont(size: 10, weight: .semibold, design: .monospaced)
                         .foregroundStyle(selected ? WorkbenchStyle.accent : WorkbenchStyle.muted)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
@@ -141,7 +141,7 @@ private struct WorkbenchTabButton: View {
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                 }
             }
-            .font(.system(size: 12, weight: selected ? .semibold : .regular))
+            .appFont(size: 12, weight: selected ? .semibold : .regular)
             .foregroundStyle(selected ? Color.primary : WorkbenchStyle.muted)
             .padding(.horizontal, 9)
             .frame(height: 26)
@@ -213,18 +213,11 @@ struct ContentView: View {
                 Button { model.showQuickSwitch = true } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
-                        Text("⌘K").font(.system(size: 11, design: .monospaced)).foregroundStyle(WorkbenchStyle.muted)
+                        Text("⌘K").appFont(size: 11, design: .monospaced).foregroundStyle(WorkbenchStyle.muted)
                     }
                 }
                 .buttonStyle(WorkbenchButtonStyle())
                 .help("搜索工程、工作树组或仓库 (⌘K)")
-                IconActionButton(systemName: "arrow.clockwise", hint: "刷新 (⌘R)") { model.refresh() }
-                    .overlay {
-                        if model.isRefreshing {
-                            ProgressView().controlSize(.mini).padding(4).background(WorkbenchStyle.surface)
-                                .allowsHitTesting(false)
-                        }
-                    }
                 HStack(spacing: 0) { mergeRequestMenu }
             }
         }
@@ -251,9 +244,6 @@ struct ContentView: View {
                                     set: { if !$0 { model.error = nil; model.notice = nil } })) {
             Button("好") { model.error = nil; model.notice = nil }
         } message: { Text(model.error ?? model.notice ?? "") }
-        .onReceive(Timer.publish(every: 4, on: .main, in: .common).autoconnect()) { _ in
-            model.automaticRefresh()
-        }
     }
 
     private var sidebar: some View {
@@ -272,7 +262,7 @@ struct ContentView: View {
                                         Button(branch) { model.restoreBranch(branch) }
                                     }
                                 }
-                                .font(.system(size: 11))
+                                .appFont(size: 11)
                             }
                         }
                         VStack(alignment: .leading, spacing: 6) {
@@ -287,11 +277,11 @@ struct ContentView: View {
             }
             HStack(spacing: 6) {
                 Circle().fill(model.isRefreshing ? Color.orange : Color.green).frame(width: 6, height: 6)
-                Text(model.isRefreshing ? "正在刷新本地状态" : "本地仓库 · 自动刷新")
+                Text(model.isRefreshing ? "正在刷新本地状态" : "本地仓库 · 前台每 10 秒刷新")
                 Spacer(minLength: 0)
                 Text("只读")
             }
-            .font(.system(size: 10))
+            .appFont(size: 10)
             .foregroundStyle(WorkbenchStyle.muted)
             .padding(.horizontal, 12)
             .frame(height: 28)
@@ -311,14 +301,14 @@ struct ContentView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
+                            .appFont(size: 10, weight: .semibold)
                             .frame(width: 16)
                         Text(LocalizedStringKey(group.name)).lineLimit(1)
                         Text("(\(repositories.count))")
-                            .font(.system(size: 10, design: .monospaced))
+                            .appFont(size: 10, design: .monospaced)
                         Spacer(minLength: 0)
                     }
-                    .font(.system(size: 11, weight: .medium))
+                    .appFont(size: 11, weight: .medium)
                     .foregroundStyle(WorkbenchStyle.muted)
                     .frame(height: 28)
                     .contentShape(Rectangle())
@@ -346,20 +336,20 @@ struct ContentView: View {
         return Button { model.selectWorktreeGroup(group.id) } label: {
             HStack(spacing: 6) {
                 Image(systemName: group.isPrimary ? "arrow.triangle.branch" : "point.topleft.down.to.point.bottomright.curvepath")
-                    .font(.system(size: 13))
+                    .appFont(size: 13)
                     .frame(width: 16)
                     .foregroundStyle(selected ? Color.white : WorkbenchStyle.muted)
                 Text(LocalizedStringKey(group.name)).lineLimit(1)
                 Spacer(minLength: 0)
                 if selected {
                     Text(AppLocalization.text("%ld repos", model.snapshots.filter { !$0.isFallback }.count))
-                        .font(.system(size: 10, weight: .semibold))
+                        .appFont(size: 10, weight: .semibold)
                         .padding(.horizontal, 5).padding(.vertical, 2)
                         .background(Color.black.opacity(0.15))
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                 }
             }
-            .font(.system(size: 12, weight: selected ? .medium : .regular))
+            .appFont(size: 12, weight: selected ? .medium : .regular)
             .foregroundStyle(selected ? Color.white : Color.primary)
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 30)
@@ -396,11 +386,11 @@ struct ContentView: View {
                 Image(systemName: "square.3.layers.3d")
                     .foregroundStyle(WorkbenchStyle.accent)
                 Text(model.selectedProject?.name ?? "选择工程")
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(size: 12, weight: .medium)
                     .lineLimit(1).truncationMode(.middle)
                 if let count = model.selectedProject?.repositories.count {
                     Text(AppLocalization.text("%ld repositories", count))
-                        .font(.system(size: 10, weight: .medium))
+                        .appFont(size: 10, weight: .medium)
                         .foregroundStyle(WorkbenchStyle.muted)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
@@ -408,10 +398,10 @@ struct ContentView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                 }
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .appFont(size: 9, weight: .semibold)
                     .foregroundStyle(WorkbenchStyle.muted)
             }
-            .font(.system(size: 12, weight: .medium))
+            .appFont(size: 12, weight: .medium)
             .padding(.horizontal, 9).frame(height: 26)
             .background(WorkbenchStyle.surface)
             .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -426,7 +416,7 @@ struct ContentView: View {
     private func sidebarHeader(_ title: String, action: NameAction) -> some View {
         HStack {
             Text(LocalizedStringKey(title))
-                .font(.system(size: 12, weight: .bold))
+                .appFont(size: 12, weight: .bold)
                 .tracking(0.4)
                 .foregroundStyle(Color(red: 0.84, green: 0.84, blue: 0.87))
             Spacer(minLength: 0)
@@ -457,16 +447,16 @@ struct ContentView: View {
                     .frame(width: 6, height: 6)
                     .frame(width: 16, height: 14)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(repository.name).font(.system(size: 12, weight: .regular)).lineLimit(1)
+                    Text(repository.name).appFont(size: 12, weight: .regular).lineLimit(1)
                     if let selected = snapshot?.selected {
                         Text(selected.branch ?? AppLocalization.text("分离 HEAD"))
-                            .font(.system(size: 10, design: .monospaced)).foregroundStyle(WorkbenchStyle.muted).lineLimit(1)
+                            .appFont(size: 10, design: .monospaced).foregroundStyle(WorkbenchStyle.muted).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
                 if let count = snapshot?.files.count, count > 0 {
                     Text("\(count)")
-                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(WorkbenchStyle.accent)
+                        .appFont(size: 10, design: .monospaced).foregroundStyle(WorkbenchStyle.accent)
                 }
             }
             .padding(.leading, 26)
@@ -501,7 +491,7 @@ struct ContentView: View {
             HStack(spacing: 6) {
                 Circle().fill(Color.green).frame(width: 6, height: 6)
                 Text(AppLocalization.text(model.selectedGroup?.name ?? "工作树组"))
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .appFont(size: 11, weight: .medium, design: .monospaced)
                     .lineLimit(1).truncationMode(.middle)
             }
             .padding(.horizontal, 8).frame(height: 26)
@@ -544,7 +534,7 @@ struct ContentView: View {
         .popover(isPresented: $showMergeRequestPicker, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("选择仓库创建 MR")
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(size: 12, weight: .semibold)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                 Divider()
                 ForEach(model.snapshots.filter {
@@ -561,13 +551,13 @@ struct ContentView: View {
                             Circle().fill(WorkbenchStyle.repositoryColor(snapshot.repository.name))
                                 .frame(width: 6, height: 6)
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(snapshot.repository.name).font(.system(size: 12, weight: .medium))
+                                Text(snapshot.repository.name).appFont(size: 12, weight: .medium)
                                 Text(snapshot.mergeRequestURL == nil ? "无可用分支或 GitLab 远端" : snapshot.selected?.branch ?? "")
-                                    .font(.system(size: 10, design: .monospaced))
+                                    .appFont(size: 10, design: .monospaced)
                                     .foregroundStyle(WorkbenchStyle.muted)
                             }
                             Spacer(minLength: 0)
-                            Image(systemName: "arrow.up.right").font(.system(size: 11))
+                            Image(systemName: "arrow.up.right").appFont(size: 11)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 6).padding(.horizontal, 8)
@@ -598,7 +588,7 @@ struct ContentView: View {
                         .foregroundStyle(WorkbenchStyle.accent)
                 }
             }
-            .font(.system(size: 10))
+            .appFont(size: 10)
             .foregroundStyle(WorkbenchStyle.muted)
             .padding(.horizontal, 12)
             .frame(height: 28)
@@ -621,7 +611,7 @@ struct ContentView: View {
                     repositoryChangeHeader(snapshot)
                     if !collapsedChangeRepositories.contains(snapshot.repository.id) {
                         if let error = snapshot.error {
-                            Text(error).font(.system(size: 11)).foregroundStyle(.red)
+                            Text(error).appFont(size: 11).foregroundStyle(.red)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 28).padding(.vertical, 10)
                         } else if !snapshot.files.isEmpty {
@@ -655,13 +645,13 @@ struct ContentView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: collapsed ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .appFont(size: 9, weight: .semibold)
                     .foregroundStyle(WorkbenchStyle.muted)
                     .frame(width: 12)
                     .opacity(hasContent ? 1 : 0)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(snapshot.repository.name)
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.primary)
                         .lineLimit(1).truncationMode(.middle)
                     HStack(spacing: 6) {
@@ -673,7 +663,7 @@ struct ContentView: View {
                             Text("共享主目录").foregroundStyle(.orange).fixedSize()
                         }
                     }
-                    .font(.system(size: 10)).foregroundStyle(WorkbenchStyle.muted)
+                    .appFont(size: 10).foregroundStyle(WorkbenchStyle.muted)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .trailing, spacing: 3) {
@@ -685,7 +675,7 @@ struct ContentView: View {
                         Text(AppLocalization.text("%ld conflicts", conflicts)).foregroundStyle(.red)
                     }
                 }
-                .font(.system(size: 10)).fixedSize()
+                .appFont(size: 10).fixedSize()
             }
             .padding(.horizontal, 12).padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -707,13 +697,20 @@ struct ContentView: View {
                 Button { model.selectCommit(commit) } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(commit.subject).lineLimit(2)
-                            .font(.system(size: 12, weight: model.selectedCommit == commit ? .semibold : .medium))
+                            .appFont(size: 12, weight: model.selectedCommit == commit ? .semibold : .medium)
                         HStack {
                             Text(model.selectedProject?.repositories.first(where: { $0.id == commit.repositoryID })?.name ?? "仓库")
                             Text(commit.hash.prefix(7))
-                            Text(commit.date, style: .relative)
                         }
-                        .font(.system(size: 10)).foregroundStyle(WorkbenchStyle.muted)
+                        .appFont(size: 10).foregroundStyle(WorkbenchStyle.muted)
+                        HStack(spacing: 6) {
+                            Image(systemName: "person")
+                                .foregroundStyle(WorkbenchStyle.committerColor(commit.committer))
+                            Text(commit.committer).lineLimit(1).help(commit.committer)
+                            Spacer(minLength: 8)
+                            Text(commit.formattedDate).fixedSize()
+                        }
+                        .appFont(size: 11).foregroundStyle(WorkbenchStyle.muted)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
@@ -780,7 +777,7 @@ struct ContentView: View {
     private var quickSwitch: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("快速切换").font(.system(size: 15, weight: .semibold))
+                Text("快速切换").appFont(size: 15, weight: .semibold)
                 Spacer()
                 IconActionButton(systemName: "xmark", hint: "关闭") { model.showQuickSwitch = false }
             }
@@ -795,17 +792,17 @@ struct ContentView: View {
                             Button { chooseQuickResult(result) } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: result.icon)
-                                        .font(.system(size: 14))
+                                        .appFont(size: 14)
                                         .foregroundStyle(WorkbenchStyle.accent)
                                         .frame(width: 30, height: 30)
                                         .background(WorkbenchStyle.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(result.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                                        Text(result.subtitle).font(.system(size: 10)).foregroundStyle(WorkbenchStyle.muted).lineLimit(1)
+                                        Text(result.title).appFont(size: 12, weight: .medium).lineLimit(1)
+                                        Text(result.subtitle).appFont(size: 10).foregroundStyle(WorkbenchStyle.muted).lineLimit(1)
                                     }
                                     Spacer(minLength: 8)
                                     if index == quickSelection {
-                                        Image(systemName: "return").font(.system(size: 11)).foregroundStyle(WorkbenchStyle.accent)
+                                        Image(systemName: "return").appFont(size: 11).foregroundStyle(WorkbenchStyle.accent)
                                     }
                                 }
                                 .padding(.horizontal, 10).padding(.vertical, 7)
@@ -819,7 +816,7 @@ struct ContentView: View {
                             .id(result.id)
                         }
                         if quickResults.isEmpty {
-                            Text("无匹配结果").font(.system(size: 12)).foregroundStyle(WorkbenchStyle.muted)
+                            Text("无匹配结果").appFont(size: 12).foregroundStyle(WorkbenchStyle.muted)
                                 .frame(maxWidth: .infinity).padding(.vertical, 36)
                         }
                     }
@@ -839,7 +836,7 @@ struct ContentView: View {
                 Spacer()
                 Text("esc  关闭")
             }
-            .font(.system(size: 10)).foregroundStyle(WorkbenchStyle.muted)
+            .appFont(size: 10).foregroundStyle(WorkbenchStyle.muted)
         }
         .onAppear { quickQuery = ""; quickSelection = 0 }
         .onExitCommand { model.showQuickSwitch = false }
@@ -895,7 +892,7 @@ private struct ImageDiffView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(changeLabel, systemImage: "photo.on.rectangle")
-                .font(.subheadline)
+                .appFont(size: 12)
                 .foregroundStyle(.secondary)
             HStack(alignment: .top, spacing: 12) {
                 side(preview.old, title: oldTitle)
@@ -918,11 +915,11 @@ private struct ImageDiffView: View {
     private func side(_ value: ImageDiffSide, title: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(LocalizedStringKey(title)).font(.headline)
+                Text(LocalizedStringKey(title)).appFont(size: 13, weight: .semibold)
                 Spacer()
                 if let count = value.byteCount {
                     Text(ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file))
-                        .font(.caption).foregroundStyle(.secondary)
+                        .appFont(size: 10).foregroundStyle(.secondary)
                 }
             }
             ZStack {
@@ -953,7 +950,7 @@ private struct NameSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(LocalizedStringKey(title)).font(.title2.bold())
+            Text(LocalizedStringKey(title)).appFont(size: 22, weight: .bold)
             WorkbenchTextField(title: "名称", text: $name)
                 .onSubmit { if !name.trimmingCharacters(in: .whitespaces).isEmpty { onSave(name) } }
             HStack {
@@ -987,7 +984,7 @@ private struct DetailPaneView: View {
         let splitDiff = state.splitDiff
         return VStack(spacing: 0) {
             if let file = state.selectedFile {
-                Text(file.path).font(.headline).lineLimit(1).truncationMode(.middle)
+                Text(file.path).appFont(size: 13, weight: .semibold).lineLimit(1).truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12).padding(.top, 12)
                     .help(file.path)
@@ -1033,7 +1030,12 @@ private struct DetailPaneView: View {
             }
             .onChange(of: state.diffMode) { _, _ in model.loadDetail(tab: tab) }
         } else if let commit = state.selectedCommit {
-            Text(commit.subject).font(.headline).lineLimit(1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(commit.subject).appFont(size: 13, weight: .semibold).lineLimit(1)
+                Text("\(commit.committer) · \(commit.formattedDate)")
+                    .appFont(size: 11).foregroundStyle(.secondary)
+                    .lineLimit(1).help("\(commit.committer) · \(commit.formattedDate)")
+            }
         } else {
             Text(AppLocalization.text("选择文件或提交")).foregroundStyle(.secondary)
         }
@@ -1060,7 +1062,7 @@ private struct DetailPaneView: View {
         ScrollViewReader { proxy in
             ScrollView([.vertical, .horizontal]) {
                 Text(state.detail.isEmpty ? AppLocalization.text("选择左侧项目查看详情。") : state.detail)
-                    .font(.system(size: 12, design: .monospaced))
+                    .appFont(size: 12, design: .monospaced)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .padding(16)
@@ -1115,21 +1117,21 @@ private struct ChangedFileRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 7) {
             Text(AppLocalization.text(file.changeKind.rawValue))
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .appFont(size: 10, weight: .bold, design: .monospaced)
                 .foregroundStyle(color)
                 .frame(width: 22, height: 20)
                 .background(color.opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     Text((file.path as NSString).lastPathComponent)
-                        .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                        .appFont(size: 13, weight: selected ? .semibold : .medium)
                         .foregroundStyle(selected ? WorkbenchStyle.accent : Color.primary)
                         .strikethrough(file.changeKind == .deleted)
                         .lineLimit(1).truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if file.hasStaged && file.changeKind != .conflict {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .appFont(size: 10).foregroundStyle(.secondary)
                             .help(AppLocalization.text(file.hasUnstaged ? "已暂存，另有未暂存修改" : "已暂存"))
                     }
                     Group {
@@ -1145,13 +1147,13 @@ private struct ChangedFileRow: View {
                             }
                         } else { Text("—").foregroundStyle(.secondary).help(AppLocalization.text("暂无行数统计")) }
                     }
-                    .font(.system(size: 10, design: .monospaced))
+                    .appFont(size: 10, design: .monospaced)
                     .fixedSize()
                 }
                 Text((file.path as NSString).deletingLastPathComponent)
-                    .font(.system(size: 9)).foregroundStyle(WorkbenchStyle.muted)
+                    .appFont(size: 9).foregroundStyle(WorkbenchStyle.muted)
                     .lineLimit(1).truncationMode(.middle)
-                    .frame(height: 11, alignment: .leading)
+                    .frame(minHeight: 11, alignment: .leading)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
