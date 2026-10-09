@@ -4,8 +4,11 @@ struct CommitDetailView: View {
     let patch: CommitPatch
     let layout: DetailLayout
     let checkoutPath: String?
+    var commitHash: String? = nil
     @State private var selectedIndex = 0
     @State private var showAll = false
+    @State private var sources: [Int: [MergeSourceCommit]] = [:]
+    @State private var sourceFailures = Set<Int>()
 
     private var selected: CommitFilePatch { patch.files[min(selectedIndex, patch.files.count - 1)] }
     private var scrollID: String { showAll ? "all" : "file:\(selected.id)" }
@@ -22,6 +25,12 @@ struct CommitDetailView: View {
             .appFont(size: 12)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
+            if patch.isMerge {
+                Text(AppLocalization.text("合并提交 · 相对第一父提交的修改"))
+                    .appFont(size: 11).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12).padding(.bottom, 10)
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 2) {
@@ -42,6 +51,11 @@ struct CommitDetailView: View {
                                         Text(file.directory.isEmpty ? AppLocalization.text("仓库根目录") : file.directory)
                                             .appFont(size: 10).foregroundStyle(.secondary)
                                             .lineLimit(1).truncationMode(.middle)
+                                        if let commits = sources[file.id], !commits.isEmpty {
+                                            Text(AppLocalization.text("合入相关作者：%@", commits.authorSummary))
+                                                .appFont(size: 10).foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
                                     }
                                     Spacer(minLength: 4)
                                     if file.isBinary {
@@ -61,7 +75,7 @@ struct CommitDetailView: View {
                     }
                     .padding(.horizontal, 6)
                 }
-                .frame(height: min(180, CGFloat(patch.files.count) * 48 + 4))
+                .frame(height: min(180, CGFloat(patch.files.count) * (patch.isMerge ? 64 : 48) + 4))
                 .onChange(of: selectedIndex) { _, value in proxy.scrollTo(value) }
             }
             Divider()
@@ -84,24 +98,54 @@ struct CommitDetailView: View {
                 }
                 .buttonStyle(WorkbenchButtonStyle())
                 .padding(12)
+                if patch.isMerge {
+                    MergeFileSourcesView(commits: sources[selected.id], failed: sourceFailures.contains(selected.id))
+                        .id(selected.id)
+                        .padding(.horizontal, 12).padding(.bottom, 10)
+                }
                 Divider()
             }
             let diff = showAll ? patch.fullDiff : selected.diff
             if layout == .split && diff.hasChanges {
-                SplitDiffView(diff: diff, oldTitle: "父提交", newTitle: "提交后", resetID: scrollID,
+                SplitDiffView(diff: diff, oldTitle: patch.isMerge ? "第一父提交" : "父提交", newTitle: "提交后", resetID: scrollID,
                               singleSide: showAll ? nil : singleSide)
                     .id(scrollID)
             } else {
                 ScrollView([.vertical, .horizontal]) {
-                    Text(showAll ? patch.files.map(\.patch).joined(separator: "\n") : selected.patch)
-                        .appFont(size: 12, design: .monospaced)
-                        .textSelection(.enabled)
+                    PatchSummaryView(text: showAll ? patch.files.map(\.patch).joined(separator: "\n") : selected.patch)
                         .frame(maxWidth: .infinity, alignment: .topLeading).padding(16)
                 }
                 .id(scrollID)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: selected.id) {
+            guard patch.isMerge, sources[selected.id] == nil else { return }
+            guard let commitHash, let checkoutPath else {
+                sourceFailures.insert(selected.id)
+                return
+            }
+            let file = selected
+            let session = GitReadSession()
+            await withTaskCancellationHandler {
+                let task = Task.detached(priority: .utility) {
+                    try GitClient.$readSession.withValue(session) {
+                        try GitClient.mergeSources(commit: commitHash, file: file, in: checkoutPath)
+                    }
+                }
+                do {
+                    let result = try await task.value
+                    guard !Task.isCancelled else { return }
+                    sources[file.id] = result
+                    sourceFailures.remove(file.id)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    sourceFailures.insert(file.id)
+                }
+            } onCancel: {
+                session.cancel()
+            }
+        }
     }
 
     private var singleSide: DiffSide? {

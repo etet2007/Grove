@@ -25,11 +25,25 @@ struct CommitFilePatch: Identifiable {
     let diff: SplitDiff
     var name: String { (path as NSString).lastPathComponent }
     var directory: String { (path as NSString).deletingLastPathComponent }
+
+    // Only replace metadata-only renames; preserve patches containing content or mode changes.
+    var isPureRename: Bool {
+        let lines = patch.components(separatedBy: "\n").filter { !$0.isEmpty }
+        return change == .renamed && oldPath != nil
+            && lines.contains("similarity index 100%")
+            && lines.contains { $0.hasPrefix("rename from ") }
+            && lines.contains { $0.hasPrefix("rename to ") }
+            && lines.allSatisfy {
+                $0.hasPrefix("diff --git ") || $0 == "similarity index 100%"
+                    || $0.hasPrefix("rename from ") || $0.hasPrefix("rename to ")
+            }
+    }
 }
 
 struct CommitPatch {
     let files: [CommitFilePatch]
     let fullDiff: SplitDiff
+    let isMerge: Bool
     var additions: Int { files.reduce(0) { $0 + $1.additions } }
     var deletions: Int { files.reduce(0) { $0 + $1.deletions } }
 
@@ -72,7 +86,9 @@ struct CommitPatch {
                                    change: change, additions: additions, deletions: deletions,
                                    isBinary: binary, patch: patch, diff: SplitDiff.parse(patch))
         }
-        return CommitPatch(files: files, fullDiff: SplitDiff.parse(text))
+        let header = lines.prefix { !$0.hasPrefix("diff --") }
+        return CommitPatch(files: files, fullDiff: SplitDiff.parse(text),
+                           isMerge: header.contains { $0.hasPrefix("Merge: ") })
     }
 
     private static func stripPrefix(_ path: String) -> String {

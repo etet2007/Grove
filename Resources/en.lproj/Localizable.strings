@@ -159,3 +159,25 @@
 "%@\n%@\n丢弃 %ld 行未暂存修改（替换行包含原行和新行）。已暂存内容保留。此操作无法撤销。" = "%@\n%@\nDiscard %ld unstaged changed rows (replacement rows include both old and new lines). Staged content is preserved. This cannot be undone.";
 "丢弃此行修改…" = "Discard This Changed Row…";
 "丢弃此块修改…" = "Discard This Hunk…";
+
+"文件已移动或重命名，内容未变" = "File moved or renamed · Contents unchanged";
+
+"原路径" = "Original path";
+
+"新路径" = "New path";
+
+"合并提交 · 相对第一父提交的修改" = "Merge commit · Changes relative to first parent";
+
+"第一父提交" = "First Parent";
+
+"合入相关作者：%@" = "Related incoming authors: %@";
+
+"来源提交（%ld）" = "Source commits (%ld)";
+
+"无法读取合入来源，本地历史可能不完整。" = "Unable to read incoming history. Local history may be incomplete.";
+
+"未找到该文件的合入来源提交，可能包含合并时修改。" = "No incoming source commits found for this file. It may contain merge-time changes.";
+
+"按合入历史列出相关提交；不代表逐行作者或冲突解决者。" = "Related incoming commits; not attribution of individual lines or conflict resolutions.";
+
+"正在读取合入来源…" = "Loading incoming history…";

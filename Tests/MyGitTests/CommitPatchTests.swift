@@ -47,9 +47,27 @@ final class CommitPatchTests: XCTestCase {
         XCTAssertEqual(patch.files[0].path, "new name.txt")
         XCTAssertEqual(patch.files[0].oldPath, "old name.txt")
         XCTAssertEqual(patch.files[0].change, .renamed)
+        XCTAssertTrue(patch.files[0].isPureRename)
         XCTAssertEqual(patch.files[1].path, "中.txt")
         XCTAssertEqual(patch.files[1].change, .modified)
         XCTAssertEqual(patch.additions, 0)
         XCTAssertTrue(CommitPatch.parse("正在读取…").files.isEmpty)
+    }
+
+    func testRenameSummaryPreservesOtherChangesAndDecodesPaths() {
+        let rename = #"""
+        diff --git "a/\344\270\255.txt" "b/archive/\344\270\255.txt"
+        similarity index 100%
+        rename from "\344\270\255.txt"
+        rename to "archive/\344\270\255.txt"
+        """#
+        let file = CommitPatch.parse(rename).files[0]
+        XCTAssertTrue(file.isPureRename)
+        XCTAssertEqual(file.oldPath, "中.txt")
+        XCTAssertEqual(file.path, "archive/中.txt")
+        for extra in ["old mode 100644\nnew mode 100755", "@@ -1 +1 @@\n-old\n+new", "Binary files a/old and b/new differ"] {
+            XCTAssertFalse(CommitPatch.parse(rename + "\n" + extra).files[0].isPureRename)
+        }
+        XCTAssertFalse(CommitPatch.parse(rename.replacingOccurrences(of: "100%", with: "90%")).files[0].isPureRename)
     }
 }

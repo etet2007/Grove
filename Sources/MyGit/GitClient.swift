@@ -360,6 +360,8 @@ struct GitClient {
     }
 
     static func show(_ commit: Commit, in worktree: String) throws -> String {
-        try text(["show", "--format=fuller", "--no-ext-diff", "--find-renames", commit.hash], in: worktree)
+        // Combined merge patches have multiple old columns; use the current branch's
+        // pre-merge version so the file list and two-column renderer share one baseline.
+        try text(["show", "--format=fuller", "--diff-merges=first-parent", "--no-ext-diff", "--find-renames", commit.hash], in: worktree)
     }
 }
