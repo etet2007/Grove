@@ -8,6 +8,11 @@ struct DiffLine: Equatable {
     let number: Int?
     let text: String
     let kind: DiffLineKind
+    let syntax: [SyntaxToken]
+
+    init(number: Int?, text: String, kind: DiffLineKind, syntax: [SyntaxToken] = []) {
+        self.number = number; self.text = text; self.kind = kind; self.syntax = syntax
+    }
 }
 
 struct DiffRow: Identifiable, Equatable {
@@ -45,6 +50,8 @@ struct SplitDiff {
         var hasChanges = false
         var oldHeader: String?
         var sawFileHeaders = false
+        var oldSyntax = SyntaxHighlighter()
+        var newSyntax = SyntaxHighlighter()
 
         func append(_ old: DiffLine?, _ new: DiffLine?) {
             rows.append(DiffRow(id: rows.count, old: old, new: new))
@@ -66,12 +73,15 @@ struct SplitDiff {
                 inHunk = false
                 sawFileHeaders = false
                 oldHeader = nil
+                oldSyntax = SyntaxHighlighter(); newSyntax = SyntaxHighlighter()
                 if let separator = line.range(of: " b/", options: .backwards) {
                     append(DiffLine(number: nil, text: String(line[line.index(line.startIndex, offsetBy: 13)..<separator.lowerBound]), kind: .heading),
                            DiffLine(number: nil, text: String(line[separator.upperBound...]), kind: .heading))
                 }
             } else if line.hasPrefix("@@ "), let ranges = hunkStarts(in: line) {
                 flushChanges()
+                if oldNumber != ranges.0 { oldSyntax.resetContext() }
+                if newNumber != ranges.1 { newSyntax.resetContext() }
                 oldNumber = ranges.0
                 newNumber = ranges.1
                 inHunk = true
@@ -81,8 +91,10 @@ struct SplitDiff {
                 flushChanges()
                 inHunk = false
                 oldHeader = line
+                oldSyntax = SyntaxHighlighter(path: String(line.dropFirst(4)))
             } else if line.hasPrefix("+++ "), !inHunk {
                 sawFileHeaders = true
+                newSyntax = SyntaxHighlighter(path: String(line.dropFirst(4)))
                 append(oldHeader.map { DiffLine(number: nil, text: $0, kind: .heading) },
                        DiffLine(number: nil, text: line, kind: .heading))
                 oldHeader = nil
@@ -94,16 +106,18 @@ struct SplitDiff {
                 case " ":
                     flushChanges()
                     let text = String(line.dropFirst())
-                    append(DiffLine(number: oldNumber, text: text, kind: .context),
-                           DiffLine(number: newNumber, text: text, kind: .context))
+                    append(DiffLine(number: oldNumber, text: text, kind: .context, syntax: oldSyntax.tokens(in: text)),
+                           DiffLine(number: newNumber, text: text, kind: .context, syntax: newSyntax.tokens(in: text)))
                     oldNumber += 1
                     newNumber += 1
                 case "-":
-                    removals.append(DiffLine(number: oldNumber, text: String(line.dropFirst()), kind: .removed))
+                    let text = String(line.dropFirst())
+                    removals.append(DiffLine(number: oldNumber, text: text, kind: .removed, syntax: oldSyntax.tokens(in: text)))
                     oldNumber += 1
                     hasChanges = true
                 case "+":
-                    additions.append(DiffLine(number: newNumber, text: String(line.dropFirst()), kind: .added))
+                    let text = String(line.dropFirst())
+                    additions.append(DiffLine(number: newNumber, text: text, kind: .added, syntax: newSyntax.tokens(in: text)))
                     newNumber += 1
                     hasChanges = true
                 default:

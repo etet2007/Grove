@@ -20,9 +20,7 @@ struct PatchSummaryView: View {
             }
             .textSelection(.enabled)
         } else {
-            Text(text)
-                .appFont(size: 12, design: .monospaced)
-                .textSelection(.enabled)
+            HighlightedPatchText(text: text)
         }
     }
 

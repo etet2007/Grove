@@ -167,10 +167,10 @@ private struct DiffRowsColumn: View {
     private func line(_ value: DiffLine?, rowID: Int, width: CGFloat) -> some View {
         HStack(spacing: 0) {
             Text(value?.number.map(String.init) ?? "")
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(value?.kind == .removed ? Color.red : value?.kind == .added ? Color.green : Color.secondary)
                 .frame(width: 48 * fontScale, alignment: .trailing)
                 .padding(.trailing, 12 * fontScale)
-            Text(value?.text ?? "")
+            Text(SyntaxHighlighter.attributed(value?.text ?? "", tokens: value?.syntax ?? []))
                 .foregroundStyle(value?.kind == .heading || value?.kind == .hunk ? .secondary : .primary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: true, vertical: false)

@@ -170,15 +170,28 @@ struct ContentView: View {
     @State private var showMergeRequestPicker = false
     @State private var collapsedRepositoryGroups: Set<UUID> = []
     @State private var collapsedChangeRepositories: Set<UUID> = []
+    @AppStorage(AppTypography.fontSizeKey) private var fontSize = AppTypography.defaultFontSize
+
+    private var initialSidebarWidth: CGFloat {
+        let scale = AppTypography.scale(for: fontSize)
+        let names = (model.selectedProject?.worktreeGroups.map(\.name) ?? [])
+            + (model.selectedProject?.repositories.map(\.name) ?? [])
+            + (model.selectedProject?.groups.map(\.name) ?? [])
+        let font = NSFont.systemFont(ofSize: 12 * scale, weight: .semibold)
+        let textWidth = names.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
+        return min(420 * scale, max(280, textWidth + 92 * scale))
+    }
 
     var body: some View {
-        HSplitView {
+        SidebarSplitView(initialWidth: initialSidebarWidth) {
             sidebar
-                .frame(minWidth: 220, idealWidth: 240, maxWidth: .infinity)
+                .frame(minWidth: 220, idealWidth: initialSidebarWidth, maxWidth: .infinity)
+                .environmentObject(model)
+        } content: {
             if model.selectedProject == nil {
                 ContentUnavailableView("还没有工程", systemImage: "externaldrive", description: Text("从标题栏创建工程，再添加本地 Git 仓库。"))
             } else {
-                mainArea
+                mainArea.environmentObject(model)
             }
         }
         .overlay {

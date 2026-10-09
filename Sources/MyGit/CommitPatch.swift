@@ -118,7 +118,7 @@ struct CommitPatch {
         return tokens
     }
 
-    private static func decodePath(_ path: String) -> String {
+    static func decodePath(_ path: String) -> String {
         guard path.hasPrefix("\""), path.hasSuffix("\"") else { return path }
         let bytes = Array(path.dropFirst().dropLast().utf8)
         var decoded: [UInt8] = []
