@@ -59,7 +59,7 @@ struct SplitDiff {
             additions.removeAll()
         }
 
-        for rawLine in patch.split(separator: "\n", omittingEmptySubsequences: false).dropLast(patch.hasSuffix("\n") ? 1 : 0) {
+        for rawLine in patch.components(separatedBy: "\n").dropLast(patch.hasSuffix("\n") ? 1 : 0) {
             let line = String(rawLine)
             if line.hasPrefix("diff --git ") {
                 flushChanges()
@@ -77,11 +77,11 @@ struct SplitDiff {
                 inHunk = true
                 let heading = DiffLine(number: nil, text: line, kind: .hunk)
                 append(heading, heading)
-            } else if line.hasPrefix("--- ") {
+            } else if line.hasPrefix("--- "), !inHunk {
                 flushChanges()
                 inHunk = false
                 oldHeader = line
-            } else if line.hasPrefix("+++ ") {
+            } else if line.hasPrefix("+++ "), !inHunk {
                 sawFileHeaders = true
                 append(oldHeader.map { DiffLine(number: nil, text: $0, kind: .heading) },
                        DiffLine(number: nil, text: line, kind: .heading))

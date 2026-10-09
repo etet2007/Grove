@@ -6,6 +6,8 @@ struct SplitDiffView: View {
     let newTitle: String
     let resetID: String
     var singleSide: DiffSide? = nil
+    var discardTargets: DiffDiscardTargets? = nil
+    var onDiscard: ((Set<Int>, UUID) -> Void)? = nil
     @AppStorage(AppTypography.fontSizeKey) private var fontSize = AppTypography.defaultFontSize
     @State private var horizontalSync = HorizontalScrollSync()
 
@@ -32,6 +34,7 @@ struct SplitDiffView: View {
 
     private func title(_ value: String) -> some View {
         Text(value)
+            .lineLimit(1)
             .appFont(size: 12, weight: .semibold)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -47,7 +50,9 @@ struct SplitDiffView: View {
             contentWidth: contentWidth,
             fontScale: AppTypography.scale(for: fontSize),
             side: side,
-            sync: horizontalSync
+            sync: horizontalSync,
+            discardTargets: discardTargets,
+            onDiscard: onDiscard
         )
         .frame(width: width)
     }
@@ -62,12 +67,12 @@ private struct DiffRowsColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(rows) { row in line(row[keyPath: lines], width: width) }
+            ForEach(rows) { row in line(row[keyPath: lines], rowID: row.id, width: width) }
         }
         .frame(width: width, height: CGFloat(rows.count) * rowHeight, alignment: .topLeading)
     }
 
-    private func line(_ value: DiffLine?, width: CGFloat) -> some View {
+    private func line(_ value: DiffLine?, rowID: Int, width: CGFloat) -> some View {
         HStack(spacing: 0) {
             Text(value?.number.map(String.init) ?? "")
                 .foregroundStyle(.tertiary)
@@ -139,6 +144,9 @@ final class VirtualizedDiffDocumentView: NSView {
     private var rows: [DiffRow] = []
     private var columnWidth: CGFloat = 0
     private var contentID: UUID?
+    private var discardTargets: DiffDiscardTargets?
+    private var onDiscard: ((Set<Int>, UUID) -> Void)?
+    private var contextOverlay: DiffContextMenuOverlay!
     private let host: NSHostingView<DiffRowsColumn>
     private(set) var renderedRowRange = 0..<0
 
@@ -150,18 +158,47 @@ final class VirtualizedDiffDocumentView: NSView {
         super.init(frame: .zero)
         host.sizingOptions = []
         addSubview(host)
+        contextOverlay = DiffContextMenuOverlay(document: self)
+        addSubview(contextOverlay)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func setContent(rows: [DiffRow], width: CGFloat, fontScale: CGFloat = 1, contentID: UUID? = nil) {
-        let changed = (contentID.map { self.contentID != $0 } ?? (self.rows != rows)) || columnWidth != width || self.fontScale != fontScale
+    func discardMenu(at point: NSPoint) -> NSMenu? {
+        guard point.y >= 0, let discardTargets, let onDiscard, let contentID else { return nil }
+        let index = Int(floor(point.y / rowHeight))
+        guard rows.indices.contains(index) else { return nil }
+        let rowID = rows[index].id
+        let menu = NSMenu()
+        func add(_ title: String, targets: Set<Int>) {
+            guard !targets.isEmpty else { return }
+            let action = DiffDiscardMenuAction { [weak self] in
+                guard self?.contentID == contentID else { return }
+                onDiscard(targets, contentID)
+            }
+            let item = NSMenuItem(title: AppLocalization.text(title), action: #selector(DiffDiscardMenuAction.invokeDiscard), keyEquivalent: "")
+            item.target = action
+            item.representedObject = action
+            menu.addItem(item)
+        }
+        add("丢弃此行修改…", targets: discardTargets.lineTargets(for: rowID))
+        add("丢弃此块修改…", targets: discardTargets.hunkTargets(for: rowID))
+        return menu.items.isEmpty ? nil : menu
+    }
+
+    func setContent(rows: [DiffRow], width: CGFloat, fontScale: CGFloat = 1, contentID: UUID? = nil,
+                    discardTargets: DiffDiscardTargets? = nil,
+                    onDiscard: ((Set<Int>, UUID) -> Void)? = nil) {
+        self.onDiscard = onDiscard
+        let changed = (contentID.map { self.contentID != $0 } ?? (self.rows != rows)) || columnWidth != width || self.fontScale != fontScale || self.discardTargets !== discardTargets
         guard changed else { return }
         self.rows = rows
         self.contentID = contentID
         columnWidth = width
         self.fontScale = fontScale
+        self.discardTargets = discardTargets
         frame.size = NSSize(width: width, height: CGFloat(rows.count) * rowHeight)
+        contextOverlay.frame = bounds
         updateVisibleRows(force: true)
     }
 
@@ -184,6 +221,43 @@ final class VirtualizedDiffDocumentView: NSView {
     }
 }
 
+private final class DiffDiscardMenuAction: NSObject {
+    let callback: () -> Void
+    init(_ callback: @escaping () -> Void) { self.callback = callback }
+    @objc func invokeDiscard() { callback() }
+}
+
+// Capture secondary clicks before selectable text's default Copy menu. Normal
+// mouse events still pass through, preserving text selection and scrolling.
+private final class DiffContextMenuOverlay: NSView {
+    weak var document: VirtualizedDiffDocumentView?
+    override var isFlipped: Bool { true }
+
+    init(document: VirtualizedDiffDocumentView) {
+        self.document = document
+        super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let event = NSApp.currentEvent,
+              event.type == .rightMouseDown || event.type == .rightMouseUp
+                || (event.type == .leftMouseDown && event.modifierFlags.contains(.control)) else { return nil }
+        let local = convert(point, from: superview)
+        guard bounds.contains(local), document?.discardMenu(at: local) != nil else { return nil }
+        return self
+    }
+
+    override func rightMouseDown(with event: NSEvent) { showMenu(event) }
+    override func mouseDown(with event: NSEvent) { showMenu(event) }
+
+    private func showMenu(_ event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard let menu = document?.discardMenu(at: point) else { return }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+}
+
 private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
     let rows: [DiffRow]
     let contentID: UUID
@@ -192,6 +266,8 @@ private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
     let fontScale: CGFloat
     let side: DiffSide
     let sync: HorizontalScrollSync
+    var discardTargets: DiffDiscardTargets? = nil
+    var onDiscard: ((Set<Int>, UUID) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(side: side, sync: sync) }
 
@@ -211,7 +287,8 @@ private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let document = scrollView.documentView as? VirtualizedDiffDocumentView else { return }
-        document.setContent(rows: rows, width: contentWidth, fontScale: fontScale, contentID: contentID)
+        document.setContent(rows: rows, width: contentWidth, fontScale: fontScale, contentID: contentID,
+                            discardTargets: discardTargets, onDiscard: onDiscard)
         document.updateVisibleRows()
     }
 

@@ -88,6 +88,8 @@ private struct MergeRequestCacheEntry {
     var detail: String { detailState.detail }
     private var detailObservers: [AnyCancellable] = []
     @Published private(set) var isRefreshing = false
+    @Published private(set) var isSwitchingBranch = false
+    @Published private(set) var isDiscarding = false
     @Published var notice: String?
     @Published var error: String?
     @Published var activeTab = 0 {
@@ -288,11 +290,64 @@ private struct MergeRequestCacheEntry {
         save(); refresh(useCachedHistory: true)
     }
 
+    func switchBranch(_ branch: String, for repositoryID: UUID, checkoutPath: String) async {
+        guard !isSwitchingBranch, !isDiscarding,
+              let projectID = selectedProjectID, let groupID = selectedWorktreeGroupID,
+              snapshots.contains(where: { $0.repository.id == repositoryID && $0.selected?.path == checkoutPath }) else { return }
+        isSwitchingBranch = true
+        refreshTask?.cancel()
+        refreshSession?.cancel()
+        refreshGeneration += 1
+        isRefreshing = false
+        detailStates.forEach { $0.clear() }
+        let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+            do { try GitClient.switchBranch(branch, in: checkoutPath); return nil }
+            catch { return error.localizedDescription }
+        }.value
+        if let failure {
+            error = AppLocalization.text("切换分支失败：%@", failure)
+        } else if let index = projects.firstIndex(where: { $0.id == projectID }),
+                  let groupIndex = projects[index].worktreeGroups.firstIndex(where: { $0.id == groupID }) {
+            // Keep browsing the checkout the user changed, even if its branch
+            // no longer matches the group's automatic branch selection.
+            projects[index].worktreeGroups[groupIndex].selections[repositoryID] = checkoutPath
+            if projects[index].worktreeGroups[groupIndex].isTransient {
+                projects[index].worktreeGroups[groupIndex].isTransient = false
+                projects[index].worktreeGroups[groupIndex].name = branch
+                projects[index].worktreeGroups[groupIndex].branch = branch
+            }
+            save()
+        }
+        groupCache.removeAll()
+        historyCache.removeAll()
+        mergeRequestCache.removeAll()
+        isSwitchingBranch = false
+        refresh()
+    }
+
     func selectFile(_ file: ChangedFile) {
         selectedFile = file
         selectedCommit = nil
         diffMode = file.hasUnstaged ? .unstaged : .staged
         loadDetail()
+    }
+
+    func discard(_ request: DiffDiscardRequest) async {
+        guard !isDiscarding, !isSwitchingBranch else { return }
+        isDiscarding = true
+        refreshTask?.cancel()
+        refreshSession?.cancel()
+        refreshGeneration += 1
+        isRefreshing = false
+        detailStates.forEach { $0.cancelRead(); $0.generation += 1 }
+        let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+            do { try DiffDiscard.apply(request); return nil }
+            catch { return error.localizedDescription }
+        }.value
+        if let failure { error = AppLocalization.text("丢弃修改失败：%@", failure) }
+        groupCache.removeAll()
+        isDiscarding = false
+        refresh()
     }
 
     func selectCommit(_ commit: Commit) {
@@ -343,6 +398,7 @@ private struct MergeRequestCacheEntry {
     }
 
     func refresh(useCachedHistory: Bool = false, changedPaths: Set<String>? = nil) {
+        guard !isSwitchingBranch, !isDiscarding else { return }
         let changedPaths = changedPaths.map { Set($0.map { canonicalFilesystemPath($0) }) }
         if changedPaths == nil {
             lastFullRefresh = Date()

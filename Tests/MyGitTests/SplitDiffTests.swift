@@ -2,6 +2,13 @@ import XCTest
 @testable import MyGit
 
 final class SplitDiffTests: XCTestCase {
+    func testCRLFAndContentResemblingFileHeadersRemainChangedRows() {
+        let diff = SplitDiff.parse("--- a/file\n+++ b/file\n@@ -1 +1 @@\n--- old content\r\n+++ new content\r\n")
+        XCTAssertEqual(diff.rows.last?.old?.text, "-- old content\r")
+        XCTAssertEqual(diff.rows.last?.new?.text, "++ new content\r")
+        XCTAssertEqual(diff.rows.last?.old?.kind, .removed)
+        XCTAssertEqual(diff.rows.last?.new?.kind, .added)
+    }
     func testAlignsReplacementsInsertionsAndLaterHunks() {
         let patch = """
         diff --git a/file.txt b/file.txt
