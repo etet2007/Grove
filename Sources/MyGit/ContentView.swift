@@ -174,7 +174,7 @@ struct ContentView: View {
     var body: some View {
         HSplitView {
             sidebar
-                .frame(minWidth: 220, idealWidth: 240, maxWidth: 300)
+                .frame(minWidth: 220, idealWidth: 240, maxWidth: .infinity)
             if model.selectedProject == nil {
                 ContentUnavailableView("还没有工程", systemImage: "externaldrive", description: Text("从标题栏创建工程，再添加本地 Git 仓库。"))
             } else {

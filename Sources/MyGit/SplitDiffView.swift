@@ -10,22 +10,22 @@ struct SplitDiffView: View {
     @State private var horizontalSync = HorizontalScrollSync()
 
     var body: some View {
-        GeometryReader { geometry in
-            let paneWidth = singleSide == nil ? max(200, (geometry.size.width - 1) / 2) : geometry.size.width
-            let contentWidth = max(paneWidth, min(16_000, diff.estimatedContentWidth * AppTypography.scale(for: fontSize)))
-            VStack(spacing: 0) {
-                HStack(spacing: 0) {
-                    if singleSide != .new { title(oldTitle).frame(width: paneWidth) }
-                    if singleSide == nil { Divider() }
-                    if singleSide != .old { title(newTitle).frame(width: paneWidth) }
-                }
+        if let singleSide {
+            column(side: singleSide)
+        } else {
+            ResizableDiffPanes(old: column(side: .old), new: column(side: .new))
+        }
+    }
+
+    private func column(side: DiffSide) -> some View {
+        VStack(spacing: 0) {
+            title(side == .old ? oldTitle : newTitle)
                 .frame(height: 34)
-                Divider()
-                HStack(alignment: .top, spacing: 0) {
-                    if singleSide != .new { pane(\.old, side: .old, width: paneWidth, contentWidth: contentWidth) }
-                    if singleSide == nil { Rectangle().fill(.separator).frame(width: 1) }
-                    if singleSide != .old { pane(\.new, side: .new, width: paneWidth, contentWidth: contentWidth) }
-                }
+            Divider()
+            GeometryReader { geometry in
+                let contentWidth = max(geometry.size.width, min(16_000, diff.estimatedContentWidth * AppTypography.scale(for: fontSize)))
+                pane(side == .old ? \.old : \.new, side: side,
+                     width: geometry.size.width, contentWidth: contentWidth)
             }
         }
     }
@@ -50,6 +50,98 @@ struct SplitDiffView: View {
             sync: horizontalSync
         )
         .frame(width: width)
+    }
+}
+
+// Own the native divider so its entire drag target advertises horizontal resizing.
+private struct ResizableDiffPanes<Pane: View>: NSViewRepresentable {
+    let old: Pane
+    let new: Pane
+
+    func makeNSView(context: Context) -> DiffPaneSplitView {
+        let split = DiffPaneSplitView()
+        split.isVertical = true
+        split.dividerStyle = .thin
+        for pane in [old, new] {
+            let host = NSHostingView(rootView: pane)
+            host.sizingOptions = []
+            split.addArrangedSubview(host)
+        }
+        return split
+    }
+
+    func updateNSView(_ split: DiffPaneSplitView, context: Context) {
+        (split.arrangedSubviews[0] as? NSHostingView<Pane>)?.rootView = old
+        (split.arrangedSubviews[1] as? NSHostingView<Pane>)?.rootView = new
+    }
+}
+
+private final class DiffPaneSplitView: NSSplitView, NSSplitViewDelegate {
+    private var dividerTrackingArea: NSTrackingArea?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        delegate = self
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private var dragRect: NSRect {
+        guard let first = arrangedSubviews.first else { return .zero }
+        return NSRect(x: first.frame.maxX - 3, y: bounds.minY,
+                      width: dividerThickness + 6, height: bounds.height)
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(dragRect, cursor: .resizeLeftRight)
+    }
+
+    override func layout() {
+        super.layout()
+        window?.invalidateCursorRects(for: self)
+        updateTrackingAreas()
+    }
+
+    override func updateTrackingAreas() {
+        if let dividerTrackingArea { removeTrackingArea(dividerTrackingArea) }
+        super.updateTrackingAreas()
+        let area = NSTrackingArea(rect: dragRect,
+                                  options: [.cursorUpdate, .mouseEnteredAndExited, .mouseMoved,
+                                            .activeInKeyWindow, .enabledDuringMouseDrag],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        dividerTrackingArea = area
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        NSCursor.resizeLeftRight.set()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        NSCursor.resizeLeftRight.set()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        NSCursor.resizeLeftRight.set()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        NSCursor.arrow.set()
+    }
+
+    func splitView(_ splitView: NSSplitView, additionalEffectiveRectOfDividerAt dividerIndex: Int) -> NSRect {
+        dragRect
+    }
+
+    func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMinimumPosition: CGFloat,
+                   ofSubviewAt dividerIndex: Int) -> CGFloat {
+        min(140, max(0, (bounds.width - dividerThickness) / 2))
+    }
+
+    func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMaximumPosition: CGFloat,
+                   ofSubviewAt dividerIndex: Int) -> CGFloat {
+        max(0, bounds.width - dividerThickness - min(140, max(0, (bounds.width - dividerThickness) / 2)))
     }
 }
 

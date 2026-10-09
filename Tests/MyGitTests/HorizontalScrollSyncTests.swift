@@ -4,6 +4,37 @@ import XCTest
 @testable import MyGit
 
 final class HorizontalScrollSyncTests: XCTestCase {
+    @MainActor func testDividerTracksHoverAndMovesTrackingAreaAfterResize() throws {
+        let host = NSHostingView(rootView: SplitDiffView(
+            diff: SplitDiff(rows: [], hasChanges: false),
+            oldTitle: "暂存区", newTitle: "工作区", resetID: "cursor"
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 800, height: 400)
+        host.layoutSubtreeIfNeeded()
+        let split = try XCTUnwrap(descendants(of: host).compactMap { $0 as? NSSplitView }.first)
+        split.updateTrackingAreas()
+        let area = try XCTUnwrap(split.trackingAreas.first { $0.options.contains(.cursorUpdate) })
+        XCTAssertTrue(area.options.contains(.mouseEnteredAndExited))
+        XCTAssertTrue(area.options.contains(.mouseMoved))
+        XCTAssertTrue(area.rect.contains(NSPoint(x: split.subviews[0].frame.maxX, y: 100)))
+
+        split.setPosition(250, ofDividerAt: 0)
+        split.layoutSubtreeIfNeeded()
+        split.updateTrackingAreas()
+        let resizedArea = try XCTUnwrap(split.trackingAreas.first { $0.options.contains(.cursorUpdate) })
+        XCTAssertEqual(resizedArea.rect.midX, 250.5, accuracy: 2)
+        XCTAssertNotEqual(area.rect, resizedArea.rect)
+
+        let event = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved,
+            location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+            context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+        defer { NSCursor.arrow.set() }
+        split.cursorUpdate(with: event)
+        XCTAssertEqual(NSCursor.current, NSCursor.resizeLeftRight)
+        split.mouseExited(with: event)
+        XCTAssertEqual(NSCursor.current, NSCursor.arrow)
+    }
+
     @MainActor func testSplitDiffKeepsBothScrollDirectionsAvailableInVisiblePanes() {
         let rows = (0..<100).map { index in
             DiffRow(id: index,
