@@ -279,7 +279,7 @@ struct ContentView: View {
                 Circle().fill(model.isRefreshing ? Color.orange : Color.green).frame(width: 6, height: 6)
                 Text(model.isRefreshing ? "正在刷新本地状态" : "本地仓库 · 前台每 10 秒刷新")
                 Spacer(minLength: 0)
-                Text("只读")
+                Text(model.isSwitchingBranch ? "正在切换分支…" : "本地 Git")
             }
             .appFont(size: 10)
             .foregroundStyle(WorkbenchStyle.muted)
@@ -431,40 +431,43 @@ struct ContentView: View {
 
     private func repositoryRow(_ repository: Repository) -> some View {
         let snapshot = model.snapshots.first { $0.repository.id == repository.id }
-        return WorkbenchMenu(title: repository.name, arrowEdge: .leading) {
-            Button("恢复自动匹配") { model.selectWorktree(nil, for: repository.id) }
-            Divider()
-            ForEach(snapshot?.worktrees ?? []) { worktree in
-                Button {
-                    model.selectWorktree(worktree.path, for: repository.id)
-                } label: {
-                    Text(AppLocalization.text("%@ · %@", worktree.branch ?? AppLocalization.text("分离 HEAD"), worktree.isPrimary ? AppLocalization.text("主目录") : URL(fileURLWithPath: worktree.path).lastPathComponent))
+        return VStack(alignment: .leading, spacing: 0) {
+            WorkbenchMenu(title: repository.name, arrowEdge: .leading) {
+                Button("恢复自动匹配") { model.selectWorktree(nil, for: repository.id) }
+                Divider()
+                ForEach(snapshot?.worktrees ?? []) { worktree in
+                    Button {
+                        model.selectWorktree(worktree.path, for: repository.id)
+                    } label: {
+                        Text(AppLocalization.text("%@ · %@", worktree.branch ?? AppLocalization.text("分离 HEAD"), worktree.isPrimary ? AppLocalization.text("主目录") : URL(fileURLWithPath: worktree.path).lastPathComponent))
+                    }
+                    .finderContextMenu(path: worktree.path)
                 }
-                .finderContextMenu(path: worktree.path)
-            }
-        } label: {
-            HStack(alignment: .top, spacing: 6) {
-                Circle().fill(WorkbenchStyle.repositoryColor(repository.name))
-                    .frame(width: 6, height: 6)
-                    .frame(width: 16, height: 14)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(repository.name).appFont(size: 12, weight: .regular).lineLimit(1)
-                    if let selected = snapshot?.selected {
-                        Text(selected.branch ?? AppLocalization.text("分离 HEAD"))
-                            .appFont(size: 10, design: .monospaced).foregroundStyle(WorkbenchStyle.muted).lineLimit(1)
+            } label: {
+                HStack(alignment: .top, spacing: 6) {
+                    Circle().fill(WorkbenchStyle.repositoryColor(repository.name))
+                        .frame(width: 6, height: 6)
+                        .frame(width: 16, height: 14)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(repository.name).appFont(size: 12, weight: .regular).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    if let count = snapshot?.files.count, count > 0 {
+                        Text("\(count)")
+                            .appFont(size: 10, design: .monospaced).foregroundStyle(WorkbenchStyle.accent)
                     }
                 }
-                Spacer(minLength: 0)
-                if let count = snapshot?.files.count, count > 0 {
-                    Text("\(count)")
-                        .appFont(size: 10, design: .monospaced).foregroundStyle(WorkbenchStyle.accent)
-                }
+                .padding(.leading, 26)
+                .padding(.trailing, 10)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, minHeight: 24)
+                .contentShape(Rectangle())
             }
-            .padding(.leading, 26)
-            .padding(.trailing, 10)
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity, minHeight: 34)
-            .contentShape(Rectangle())
+            if let selected = snapshot?.selected {
+                BranchPicker(repositoryID: repository.id, worktree: selected)
+                    .appFont(size: 10, design: .monospaced).foregroundStyle(WorkbenchStyle.muted)
+                    .padding(.leading, 48).padding(.trailing, 10).padding(.bottom, 6)
+            }
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -645,34 +648,36 @@ struct ContentView: View {
         let collapsed = collapsedChangeRepositories.contains(repositoryID)
         let hasContent = !snapshot.files.isEmpty || snapshot.error != nil
         let conflicts = snapshot.files.filter { $0.changeKind == .conflict }.count
-        return Button {
-            guard hasContent else { return }
-            if collapsed { collapsedChangeRepositories.remove(repositoryID) }
-            else { collapsedChangeRepositories.insert(repositoryID) }
-        } label: {
-            HStack(spacing: 8) {
+        return HStack(spacing: 8) {
+            Button { toggleRepository() } label: {
                 Image(systemName: collapsed ? "chevron.right" : "chevron.down")
                     .appFont(size: 9, weight: .semibold)
                     .foregroundStyle(WorkbenchStyle.muted)
                     .frame(width: 12)
                     .opacity(hasContent ? 1 : 0)
-                VStack(alignment: .leading, spacing: 3) {
+            }
+            .disabled(!hasContent)
+            VStack(alignment: .leading, spacing: 3) {
+                Button { toggleRepository() } label: {
                     Text(snapshot.repository.name)
                         .appFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.primary)
                         .lineLimit(1).truncationMode(.middle)
-                    HStack(spacing: 6) {
-                        if let selected = snapshot.selected {
-                            Text(selected.branch ?? AppLocalization.text("分离 HEAD"))
-                                .lineLimit(1).truncationMode(.middle)
-                        }
-                        if snapshot.isFallback {
-                            Text("共享主目录").foregroundStyle(.orange).fixedSize()
-                        }
-                    }
-                    .appFont(size: 10).foregroundStyle(WorkbenchStyle.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 6) {
+                    if let selected = snapshot.selected {
+                        BranchPicker(repositoryID: repositoryID, worktree: selected)
+                    }
+                    if snapshot.isFallback {
+                        Text("共享主目录").foregroundStyle(.orange).fixedSize()
+                    }
+                }
+                .appFont(size: 10).foregroundStyle(WorkbenchStyle.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button { toggleRepository() } label: {
                 VStack(alignment: .trailing, spacing: 3) {
                     Text(snapshot.error != nil ? AppLocalization.text("读取失败") :
                          snapshot.files.isEmpty ? AppLocalization.text("无修改") :
@@ -684,18 +689,20 @@ struct ContentView: View {
                 }
                 .appFont(size: 10).fixedSize()
             }
-            .padding(.horizontal, 12).padding(.vertical, 9)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(WorkbenchStyle.sidebar)
-            .overlay(alignment: .top) { Rectangle().fill(WorkbenchStyle.border.opacity(0.65)).frame(height: 1) }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(MergeRequestRowStyle())
+        .buttonStyle(.plain)
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WorkbenchStyle.sidebar)
+        .overlay(alignment: .top) { Rectangle().fill(WorkbenchStyle.border.opacity(0.65)).frame(height: 1) }
+        .contentShape(Rectangle())
         .finderContextMenu(path: snapshot.selected?.path ?? snapshot.repository.path)
-        .help(snapshot.repository.name + " · " + (snapshot.selected?.branch ?? AppLocalization.text("分离 HEAD")))
-        .accessibilityLabel(snapshot.repository.name)
-        .accessibilityValue(hasContent ? AppLocalization.text(collapsed ? "已折叠" : "已展开") : AppLocalization.text("无修改"))
-        .accessibilityHint(hasContent ? AppLocalization.text(collapsed ? "展开" : "收起") : "")
+
+        func toggleRepository() {
+            guard hasContent else { return }
+            if collapsed { collapsedChangeRepositories.remove(repositoryID) }
+            else { collapsedChangeRepositories.insert(repositoryID) }
+        }
     }
 
     private var commitsList: some View {
@@ -984,8 +991,28 @@ private struct DetailPaneView: View {
     let tab: Int
     @State private var detailLayout: DetailLayout = .split
     @State private var resetDetailScrollOnLoad = false
+    @StateObject private var discardTargets = DiffDiscardTargets()
+    @State private var pendingDiscard: DiffDiscardRequest?
+    @State private var showingDiscardConfirmation = false
 
-    var body: some View { detailPane }
+    var body: some View {
+        detailPane
+            .onAppear { discardTargets.prepare(state.splitDiff) }
+            .onChange(of: state.splitDiff.contentID) { _, _ in discardTargets.prepare(state.splitDiff) }
+            .alert("丢弃所选修改？", isPresented: $showingDiscardConfirmation) {
+                Button("取消", role: .cancel) { pendingDiscard = nil }
+                Button("丢弃", role: .destructive) {
+                    guard let request = pendingDiscard else { return }
+                    pendingDiscard = nil
+                    Task { await model.discard(request) }
+                }
+            } message: {
+                if let request = pendingDiscard {
+                    Text(AppLocalization.text("%@\n%@\n丢弃 %ld 行未暂存修改（替换行包含原行和新行）。已暂存内容保留。此操作无法撤销。",
+                                              request.file.path, request.checkoutPath, request.selectedRows.count))
+                }
+            }
+    }
 
     private var detailPane: some View {
         let splitDiff = state.splitDiff
@@ -1021,7 +1048,9 @@ private struct DetailPaneView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if detailLayout == .split && splitDiff.hasChanges {
                 SplitDiffView(diff: splitDiff, oldTitle: oldDiffTitle, newTitle: newDiffTitle,
-                              resetID: detailScrollIdentity)
+                              resetID: detailScrollIdentity,
+                              discardTargets: canDiscard ? discardTargets : nil,
+                              onDiscard: canDiscard ? prepareDiscard : nil)
                     .id(detailScrollIdentity)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -1030,6 +1059,20 @@ private struct DetailPaneView: View {
         }
         .frame(minWidth: 430)
         .background(WorkbenchStyle.background)
+    }
+
+    private var canDiscard: Bool {
+        tab == 0 && state.diffMode == .unstaged && state.selectedFile != nil
+            && state.selectedFile?.changeKind != .conflict && state.imagePreview == nil
+            && !model.isDiscarding && !model.isSwitchingBranch
+    }
+
+    private func prepareDiscard(_ rows: Set<Int>, contentID: UUID) {
+        guard canDiscard, contentID == state.splitDiff.contentID, !rows.isEmpty, let file = state.selectedFile,
+              let checkout = model.snapshots.first(where: { $0.repository.id == file.repositoryID })?.selected?.path else { return }
+        pendingDiscard = DiffDiscardRequest(file: file, checkoutPath: checkout, patch: state.detail,
+                                            selectedRows: rows)
+        showingDiscardConfirmation = true
     }
 
     private func filePath(_ path: String, repositoryID: UUID) -> String? {

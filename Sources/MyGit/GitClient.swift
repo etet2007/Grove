@@ -108,6 +108,22 @@ struct GitClient {
         return URL(fileURLWithPath: root).resolvingSymlinksInPath().standardizedFileURL.path
     }
 
+    static func localBranches(in checkout: String) throws -> [LocalBranch] {
+        let trees = try worktrees(in: checkout)
+        let refs = try text(["for-each-ref", "--sort=refname", "--format=%(refname)", "refs/heads/"], in: checkout)
+        return refs.split(whereSeparator: \.isNewline).map { ref in
+            let name = String(ref.dropFirst("refs/heads/".count))
+            return LocalBranch(name: name, checkoutPath: trees.first { $0.branch == name }?.path)
+        }
+    }
+
+    static func switchBranch(_ branch: String, in checkout: String) throws {
+        // Only existing local branches; never guess a remote, create a branch,
+        // discard changes, or override another worktree's branch ownership.
+        _ = try text(["show-ref", "--verify", "--", "refs/heads/" + branch], in: checkout)
+        _ = try text(["switch", "--no-guess", "--no-recurse-submodules", "--", branch], in: checkout)
+    }
+
     static func mergeRequestURL(in worktree: String, branch: String) -> URL? {
         let remotes = ((try? text(["remote"], in: worktree)) ?? "")
             .split(whereSeparator: \.isNewline).map(String.init)
@@ -271,13 +287,18 @@ struct GitClient {
             guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
                 return AppLocalization.text("未跟踪文件无法作为 UTF-8 文本预览。")
             }
-            return "--- /dev/null\n+++ b/\(file.path)\n" + contents.split(separator: "\n", omittingEmptySubsequences: false).map { "+" + $0 }.joined(separator: "\n")
+            var lines = contents.components(separatedBy: "\n")
+            if contents.hasSuffix("\n") || contents.isEmpty { lines.removeLast() }
+            guard !lines.isEmpty else { return AppLocalization.text("空文件") }
+            return "--- /dev/null\n+++ b/\(file.path)\n@@ -0,0 +1,\(lines.count) @@\n"
+                + lines.map { "+" + $0 + "\n" }.joined()
+                + (contents.hasSuffix("\n") ? "" : "\\ No newline at end of file\n")
         }
         let args: [String]
         switch mode {
-        case .unstaged: args = ["diff", "--no-ext-diff", "--", file.path]
-        case .staged: args = ["diff", "--cached", "--no-ext-diff", "--", file.path]
-        case .all: args = ["diff", "HEAD", "--no-ext-diff", "--", file.path]
+        case .unstaged: args = ["diff", "--no-ext-diff", "--no-textconv", "--", ":(literal)" + file.path]
+        case .staged: args = ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--", ":(literal)" + file.path]
+        case .all: args = ["diff", "HEAD", "--no-ext-diff", "--no-textconv", "--", ":(literal)" + file.path]
         }
         let output = try text(args, in: worktree)
         return output.isEmpty ? AppLocalization.text("这一视图没有可显示的修改。") : output

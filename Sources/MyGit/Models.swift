@@ -45,6 +45,12 @@ struct Worktree: Identifiable, Hashable {
     let isDetached: Bool
 }
 
+struct LocalBranch: Identifiable, Equatable {
+    var id: String { name }
+    let name: String
+    let checkoutPath: String?
+}
+
 enum FileChangeKind: String {
     case added = "A", modified = "M", deleted = "D", renamed = "R", copied = "C", conflict = "!C"
     var title: String {
