@@ -2,6 +2,57 @@ import XCTest
 @testable import MyGit
 
 final class GitClientTests: XCTestCase {
+    func testMergeCommitShowsNormalDiffAgainstFirstParent() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MyGitMergeTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func git(_ args: [String]) throws -> String { try GitClient.text(args, in: root.path) }
+        func write(_ value: String) throws {
+            try value.write(to: root.appendingPathComponent("manifest.txt"), atomically: true, encoding: .utf8)
+        }
+        _ = try git(["init", "-b", "main"])
+        _ = try git(["config", "user.name", "MyGit Test"])
+        _ = try git(["config", "user.email", "mygit@example.invalid"])
+        try write("base\n")
+        _ = try git(["add", "."])
+        _ = try git(["commit", "-m", "base"])
+        _ = try git(["switch", "-c", "feature"])
+        try write("feature\n")
+        _ = try git(["commit", "-am", "feature"])
+        _ = try git(["switch", "main"])
+        try write("main\n")
+        _ = try git(["commit", "-am", "main"])
+        // Resolve a conflict to a third value, forcing Git's default combined diff.
+        XCTAssertThrowsError(try git(["merge", "feature"]))
+        try write("resolved\n")
+        _ = try git(["add", "."])
+        _ = try git(["commit", "-m", "merge"])
+        let commit = try XCTUnwrap(GitClient.commits(in: root.path, repositoryID: UUID(), limit: 1).first)
+        let output = try GitClient.show(commit, in: root.path)
+        XCTAssertFalse(output.contains("diff --cc"))
+        let patch = CommitPatch.parse(output)
+        XCTAssertTrue(patch.isMerge)
+        let file = try XCTUnwrap(patch.files.first)
+        XCTAssertEqual(file.path, "manifest.txt")
+        XCTAssertTrue(file.diff.hasChanges)
+        XCTAssertTrue(file.patch.contains("-main"))
+        XCTAssertTrue(file.patch.contains("+resolved"))
+        XCTAssertFalse(file.patch.contains("-feature"))
+
+        // A clean merge also exposes incoming changes, even though combined diff is empty.
+        _ = try git(["switch", "feature"])
+        try "incoming\n".write(to: root.appendingPathComponent("incoming.txt"), atomically: true, encoding: .utf8)
+        _ = try git(["add", "."])
+        _ = try git(["commit", "-m", "incoming"])
+        _ = try git(["switch", "main"])
+        _ = try git(["merge", "--no-ff", "feature", "-m", "clean merge"])
+        let clean = try XCTUnwrap(GitClient.commits(in: root.path, repositoryID: UUID(), limit: 1).first)
+        let cleanPatch = CommitPatch.parse(try GitClient.show(clean, in: root.path))
+        XCTAssertTrue(cleanPatch.isMerge)
+        XCTAssertEqual(cleanPatch.files.map(\.path), ["incoming.txt"])
+        XCTAssertEqual(cleanPatch.files.first?.change, .added)
+    }
+
     func testHistoryUsesCommitterAndCommitTimeRatherThanAuthorMetadata() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("MyGitCommitTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

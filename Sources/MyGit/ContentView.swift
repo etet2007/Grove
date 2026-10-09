@@ -1040,7 +1040,8 @@ private struct DetailPaneView: View {
             Divider()
             if let commit = state.selectedCommit, let patch = state.commitPatch, !patch.files.isEmpty {
                 CommitDetailView(patch: patch, layout: detailLayout,
-                                 checkoutPath: model.snapshots.first { $0.repository.id == commit.repositoryID }?.selected?.path)
+                                 checkoutPath: model.snapshots.first { $0.repository.id == commit.repositoryID }?.selected?.path,
+                                 commitHash: commit.hash)
                     .id(commit.id)
             } else if detailLayout == .split, let preview = state.imagePreview {
                 ImageDiffView(preview: preview, oldTitle: oldDiffTitle, newTitle: newDiffTitle)
@@ -1119,9 +1120,7 @@ private struct DetailPaneView: View {
     private var rawDetail: some View {
         ScrollViewReader { proxy in
             ScrollView([.vertical, .horizontal]) {
-                Text(state.detail.isEmpty ? AppLocalization.text("选择左侧项目查看详情。") : state.detail)
-                    .appFont(size: 12, design: .monospaced)
-                    .textSelection(.enabled)
+                PatchSummaryView(text: state.detail.isEmpty ? AppLocalization.text("选择左侧项目查看详情。") : state.detail)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .padding(16)
                     .id("diff-content")
