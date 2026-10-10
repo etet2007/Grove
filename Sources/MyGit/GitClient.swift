@@ -284,12 +284,12 @@ struct GitClient {
             if let size = attributes?[.size] as? NSNumber, size.intValue > 250_000 {
                 return AppLocalization.text("Untracked file is too large to preview (%lld bytes).", size.intValue)
             }
-            guard let contents = try? String(contentsOf: url, encoding: .utf8) else {
-                return AppLocalization.text("未跟踪文件无法作为 UTF-8 文本预览。")
+            guard let contents = try? String(contentsOf: url, encoding: .utf8), !contents.contains("\0") else {
+                return AppLocalization.text("新增二进制文件，无法显示文本差异。\n文件路径：%@", file.path)
             }
             var lines = contents.components(separatedBy: "\n")
             if contents.hasSuffix("\n") || contents.isEmpty { lines.removeLast() }
-            guard !lines.isEmpty else { return AppLocalization.text("空文件") }
+            guard !lines.isEmpty else { return AppLocalization.text("新增空文件\n文件路径：%@", file.path) }
             return "--- /dev/null\n+++ b/\(file.path)\n@@ -0,0 +1,\(lines.count) @@\n"
                 + lines.map { "+" + $0 + "\n" }.joined()
                 + (contents.hasSuffix("\n") ? "" : "\\ No newline at end of file\n")
@@ -304,8 +304,12 @@ struct GitClient {
         return output.isEmpty ? AppLocalization.text("这一视图没有可显示的修改。") : output
     }
 
+    static func isImagePath(_ path: String) -> Bool {
+        imageExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased())
+    }
+
     static func imagePreview(for file: ChangedFile, in worktree: String, mode: DiffMode) -> ImageDiffPreview? {
-        guard imageExtensions.contains(URL(fileURLWithPath: file.path).pathExtension.lowercased()) else { return nil }
+        guard isImagePath(file.path) else { return nil }
 
         func blob(_ revision: String) -> ImageDiffSide {
             guard let sizeText = try? text(["cat-file", "-s", revision], in: worktree),

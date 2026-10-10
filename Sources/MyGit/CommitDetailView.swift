@@ -106,7 +106,7 @@ struct CommitDetailView: View {
                 Divider()
             }
             let diff = showAll ? patch.fullDiff : selected.diff
-            if layout == .split && diff.hasChanges {
+            if layout == .split && diff.hasChanges && !(showAll ? patch.files.contains { $0.summaryTitle != nil } : selected.summaryTitle != nil) {
                 SplitDiffView(diff: diff, oldTitle: patch.isMerge ? "第一父提交" : "父提交", newTitle: "提交后", resetID: scrollID,
                               singleSide: showAll ? nil : singleSide)
                     .id(scrollID)

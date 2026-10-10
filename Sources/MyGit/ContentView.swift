@@ -1060,7 +1060,7 @@ private struct DetailPaneView: View {
                 ImageDiffView(preview: preview, oldTitle: oldDiffTitle, newTitle: newDiffTitle)
                     .id(detailScrollIdentity)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if detailLayout == .split && splitDiff.hasChanges {
+            } else if detailLayout == .split && splitDiff.hasChanges && !CommitPatch.parse(state.detail, prepareDiff: false).files.contains(where: { $0.summaryTitle != nil }) {
                 SplitDiffView(diff: splitDiff, oldTitle: oldDiffTitle, newTitle: newDiffTitle,
                               resetID: detailScrollIdentity,
                               discardTargets: canDiscard ? discardTargets : nil,

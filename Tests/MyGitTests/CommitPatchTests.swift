@@ -2,6 +2,41 @@ import XCTest
 @testable import MyGit
 
 final class CommitPatchTests: XCTestCase {
+    func testBinaryDeletionUsesImageSummaryAndPreservesPath() {
+        let path = "containers/ODMLegacyStrings/src/main/res/drawable-xxhdpi/ic_playback_list_free_pano_without_fusion.webp"
+        let file = CommitPatch.parse("""
+        diff --git a/\(path) b/\(path)
+        deleted file mode 100644
+        index b9eaded1..00000000
+        Binary files a/\(path) and /dev/null differ
+        """).files[0]
+        XCTAssertEqual(file.path, path)
+        XCTAssertEqual(file.change, .deleted)
+        XCTAssertEqual(file.binarySummaryTitle, "图片已删除")
+        XCTAssertNil(file.oldPath)
+    }
+
+    func testBinarySummariesDistinguishChangesAndTextFiles() {
+        for (metadata, title) in [
+            ("new file mode 100644", "新增二进制文件"),
+            ("deleted file mode 100644", "二进制文件已删除"),
+            ("index abc..def", "二进制文件已修改"),
+            ("rename from old.bin\nrename to new.bin", "二进制文件已移动或重命名"),
+            ("copy from old.bin\ncopy to new.bin", "二进制文件已复制")
+        ] {
+            let file = CommitPatch.parse("diff --git a/old.bin b/new.bin\n" + metadata + "\nGIT binary patch").files[0]
+            XCTAssertEqual(file.binarySummaryTitle, title)
+            if file.change == .renamed || file.change == .copied {
+                XCTAssertEqual(file.oldPath, "old.bin")
+                XCTAssertEqual(file.path, "new.bin")
+            }
+        }
+        let textImage = CommitPatch.parse("diff --git a/image.png b/image.png\n@@ -1 +1 @@\n-old\n+new").files[0]
+        XCTAssertNil(textImage.binarySummaryTitle)
+        let image = CommitPatch.parse("diff --git a/image.PNG b/image.PNG\nBinary files a/image.PNG and b/image.PNG differ").files[0]
+        XCTAssertEqual(image.binarySummaryTitle, "图片已修改")
+    }
+
     func testSeparatesFilesAndCountsOnlyHunkContent() {
         let text = """
         commit abc

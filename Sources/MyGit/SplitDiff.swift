@@ -44,6 +44,7 @@ struct SplitDiff {
         var rows: [DiffRow] = []
         var removals: [DiffLine] = []
         var additions: [DiffLine] = []
+        var newlineNotes: [DiffLine] = []
         var oldNumber = 0
         var newNumber = 0
         var inHunk = false
@@ -64,6 +65,8 @@ struct SplitDiff {
             }
             removals.removeAll()
             additions.removeAll()
+            for note in newlineNotes { append(note, note) }
+            newlineNotes.removeAll()
         }
 
         for rawLine in patch.components(separatedBy: "\n").dropLast(patch.hasSuffix("\n") ? 1 : 0) {
@@ -98,8 +101,9 @@ struct SplitDiff {
                 append(oldHeader.map { DiffLine(number: nil, text: $0, kind: .heading) },
                        DiffLine(number: nil, text: line, kind: .heading))
                 oldHeader = nil
-            } else if line.hasPrefix("\\ No newline at end of file") {
-                continue
+            } else if line == "\\ No newline at end of file" {
+                let note = DiffLine(number: nil, text: AppLocalization.text("文件末尾没有换行符"), kind: .heading)
+                if !newlineNotes.contains(note) { newlineNotes.append(note) }
             } else if inHunk || (sawFileHeaders && line.hasPrefix("+")) {
                 if !inHunk { inHunk = true; oldNumber = 0; newNumber = 1 }
                 switch line.first {
