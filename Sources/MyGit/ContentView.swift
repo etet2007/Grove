@@ -1,24 +1,5 @@
 import SwiftUI
 
-private struct MergeRequestRowStyle: ButtonStyle {
-    func makeBody(configuration: ButtonStyleConfiguration) -> some View {
-        HoverRow(label: configuration.label, isPressed: configuration.isPressed)
-    }
-
-    private struct HoverRow: View {
-        let label: ButtonStyleConfiguration.Label
-        let isPressed: Bool
-        @State private var isHovered = false
-
-        var body: some View {
-            label
-                .background(isPressed ? WorkbenchStyle.raised : (isHovered ? WorkbenchStyle.surface : Color.clear))
-                .clipShape(RoundedRectangle(cornerRadius: 5))
-                .onHover { isHovered = $0 }
-        }
-    }
-}
-
 private struct IconActionButton: View {
     let systemName: String
     let hint: String
@@ -115,7 +96,7 @@ private struct PickerChoiceStyle: PrimitiveButtonStyle {
                 .padding(.horizontal, 8).padding(.vertical, 7)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(MergeRequestRowStyle())
+        .buttonStyle(WorkbenchHoverButtonStyle())
     }
 }
 
@@ -171,7 +152,7 @@ private struct WorkbenchTabButton: View {
             .background(selected ? WorkbenchStyle.surface : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 5))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(WorkbenchHoverButtonStyle())
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
@@ -300,6 +281,7 @@ struct ContentView: View {
                                     }
                                 }
                                 .appFont(size: 11)
+                                .workbenchHoverFeedback()
                             }
                         }
                         VStack(alignment: .leading, spacing: 6) {
@@ -350,7 +332,7 @@ struct ContentView: View {
                     .frame(height: 28)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(WorkbenchHoverButtonStyle())
                 .accessibilityLabel(AppLocalization.text(expanded ? "收起仓库组 %@" : "展开仓库组 %@", group.name))
                 IconActionButton(systemName: "folder.badge.plus", hint: AppLocalization.text("导入仓库到%@", group.name)) {
                     chooseRepositories(for: group.id)
@@ -394,7 +376,7 @@ struct ContentView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(WorkbenchHoverButtonStyle())
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .contextMenu {
             if !group.isPrimary {
@@ -520,6 +502,7 @@ struct ContentView: View {
         }
         .background(isSelected ? WorkbenchStyle.selection : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 5))
+        .workbenchHoverFeedback()
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .focusEffectDisabled()
@@ -620,7 +603,7 @@ struct ContentView: View {
                         .padding(.vertical, 6).padding(.horizontal, 8)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(MergeRequestRowStyle())
+                    .buttonStyle(WorkbenchHoverButtonStyle())
                     .disabled(snapshot.mergeRequestURL == nil)
                 }
             }
@@ -651,7 +634,7 @@ struct ContentView: View {
                 Text(AppLocalization.text("%ld repositories · %ld changed files", model.snapshots.count, model.snapshots.reduce(0) { $0 + $1.files.count }))
                 Spacer()
                 if model.browsingRepositoryID != nil {
-                    Button("显示全部仓库") { model.selectBrowsingRepository(nil) }.buttonStyle(.plain)
+                    Button("显示全部仓库") { model.selectBrowsingRepository(nil) }.buttonStyle(WorkbenchHoverButtonStyle())
                         .foregroundStyle(WorkbenchStyle.accent)
                 }
             }
@@ -687,7 +670,7 @@ struct ContentView: View {
                                     Button { model.selectFile(file) } label: {
                                         ChangedFileRow(file: file, selected: model.selectedFile?.id == file.id)
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(WorkbenchHoverButtonStyle())
                                     .finderContextMenu(path: snapshot.selected.map {
                                         URL(fileURLWithPath: $0.path).appendingPathComponent(file.path).path
                                     })
@@ -727,6 +710,7 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                 }
+                .disabled(!hasContent)
                 HStack(spacing: 6) {
                     if let selected = snapshot.selected {
                         BranchPicker(repositoryID: repositoryID, worktree: selected)
@@ -750,11 +734,13 @@ struct ContentView: View {
                 }
                 .appFont(size: 10).fixedSize()
             }
+            .disabled(!hasContent)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(WorkbenchHoverButtonStyle())
         .padding(.horizontal, 12).padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(WorkbenchStyle.sidebar)
+        .workbenchHoverFeedback(enabled: hasContent)
         .overlay(alignment: .top) { Rectangle().fill(WorkbenchStyle.border.opacity(0.65)).frame(height: 1) }
         .contentShape(Rectangle())
         .finderContextMenu(path: snapshot.selected?.path ?? snapshot.repository.path)
@@ -957,7 +943,7 @@ struct ContentView: View {
                                             in: RoundedRectangle(cornerRadius: 6))
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(MergeRequestRowStyle())
+                            .buttonStyle(WorkbenchHoverButtonStyle())
                             .accessibilityAddTraits(index == quickSelection ? [.isSelected] : [])
                             .id(result.id)
                         }

@@ -56,7 +56,7 @@ struct MergeFileSourcesView: View {
                 } else {
                     Text(AppLocalization.text("合入相关作者：%@", commits.authorSummary))
                         .lineLimit(2).help(commits.map(\.identity).uniqued().joined(separator: "\n"))
-                    DisclosureGroup(AppLocalization.text("来源提交（%ld）", commits.count), isExpanded: $expanded) {
+                    DisclosureGroup(isExpanded: $expanded) {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 8) {
                                 ForEach(commits) { commit in
@@ -71,6 +71,10 @@ struct MergeFileSourcesView: View {
                         }
                         .frame(maxHeight: 120)
                         .padding(.top, 6)
+                    } label: {
+                        Text(AppLocalization.text("来源提交（%ld）", commits.count))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .workbenchHoverFeedback()
                     }
                     Text(AppLocalization.text("按合入历史列出相关提交；不代表逐行作者或冲突解决者。"))
                         .foregroundStyle(.secondary)

@@ -44,7 +44,7 @@ struct BranchPicker: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(WorkbenchHoverButtonStyle())
         .disabled(model.isSwitchingBranch || model.isDiscarding)
         .help(AppLocalization.text("切换本地分支"))
         .accessibilityLabel(AppLocalization.text("切换本地分支：%@", worktree.branch ?? AppLocalization.text("分离 HEAD")))
@@ -55,12 +55,14 @@ struct BranchPicker: View {
                     TextField("搜索本地分支", text: $query)
                         .textFieldStyle(.roundedBorder)
                         .accessibilityLabel("搜索本地分支")
+                        .workbenchHoverFeedback()
                     if toolStashCount > 0 {
                         Toggle(isOn: $showToolStashes) {
                             Text(AppLocalization.text("显示工具临时分支（%ld）", toolStashCount))
                         }
                         .toggleStyle(.checkbox)
                         .appFont(size: 10)
+                        .workbenchHoverFeedback()
                     }
                 }
                 .padding(12)

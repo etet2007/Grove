@@ -26,6 +26,37 @@ enum WorkbenchStyle {
     }
 }
 
+private struct WorkbenchHoverFeedback: ViewModifier {
+    var isPressed = false
+    var enabled = true
+    var cornerRadius: CGFloat = 5
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(Color.white.opacity(isEnabled && enabled ? (isPressed ? 0.12 : isHovered ? 0.06 : 0) : 0))
+                    .allowsHitTesting(false)
+            }
+            .onHover { isHovered = $0 }
+    }
+}
+
+extension View {
+    func workbenchHoverFeedback(enabled: Bool = true, cornerRadius: CGFloat = 5) -> some View {
+        modifier(WorkbenchHoverFeedback(enabled: enabled, cornerRadius: cornerRadius))
+    }
+}
+
+struct WorkbenchHoverButtonStyle: ButtonStyle {
+    func makeBody(configuration: ButtonStyleConfiguration) -> some View {
+        configuration.label
+            .modifier(WorkbenchHoverFeedback(isPressed: configuration.isPressed))
+    }
+}
+
 struct WorkbenchRowButtonStyle: ButtonStyle {
     var isSelected = false
 
@@ -37,16 +68,17 @@ struct WorkbenchRowButtonStyle: ButtonStyle {
         let label: ButtonStyleConfiguration.Label
         let isSelected: Bool
         let isPressed: Bool
+        @Environment(\.isEnabled) private var isEnabled
         @State private var isHovered = false
 
         var body: some View {
             label
                 .padding(.vertical, 5).padding(.horizontal, 6)
                 .background(isSelected ? WorkbenchStyle.selection
-                            : isPressed ? WorkbenchStyle.raised
-                            : isHovered ? WorkbenchStyle.surface : Color.clear)
+                            : isEnabled && isPressed ? WorkbenchStyle.raised
+                            : isEnabled && isHovered ? WorkbenchStyle.surface : Color.clear)
                 .overlay {
-                    if isSelected && (isHovered || isPressed) {
+                    if isEnabled && isSelected && (isHovered || isPressed) {
                         Color.white.opacity(isPressed ? 0.16 : 0.08)
                             .allowsHitTesting(false)
                     }
@@ -74,6 +106,7 @@ struct WorkbenchButtonStyle: ButtonStyle {
             .overlay(RoundedRectangle(cornerRadius: 5)
                 .strokeBorder(emphasized ? WorkbenchStyle.accent.opacity(0.32) : WorkbenchStyle.border.opacity(0.65)))
             .opacity(isEnabled ? 1 : 0.4)
+            .modifier(WorkbenchHoverFeedback(isPressed: configuration.isPressed))
     }
 }
 
@@ -107,6 +140,7 @@ struct WorkbenchTextField: View {
         .background(WorkbenchStyle.background, in: RoundedRectangle(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7)
             .strokeBorder(isFocused ? WorkbenchStyle.accent.opacity(0.65) : WorkbenchStyle.border))
+        .workbenchHoverFeedback(cornerRadius: 7)
     }
 }
 
@@ -129,7 +163,7 @@ struct WorkbenchSegments<Value: Hashable>: View {
                                     in: RoundedRectangle(cornerRadius: 5))
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(WorkbenchHoverButtonStyle())
                 .accessibilityAddTraits(selection == value ? [.isSelected] : [])
             }
         }

@@ -42,6 +42,7 @@ struct SettingsView: View {
                             Text(verbatim: language.name).tag(language)
                         }
                     }
+                    .workbenchHoverFeedback()
                     .onChange(of: language) { _, value in value.save() }
                     Text("语言修改将在重启应用后生效。")
                         .foregroundStyle(.secondary)
@@ -52,6 +53,7 @@ struct SettingsView: View {
                             Text("\(size) pt").tag(Double(size))
                         }
                     }
+                    .workbenchHoverFeedback()
                     Text("调整侧边栏、列表和 diff 的字体大小，立即应用于所有窗口。")
                         .foregroundStyle(.secondary)
                 }
@@ -66,6 +68,7 @@ struct SettingsView: View {
                     .padding(.vertical, 6)
                 }
                 Button("恢复默认字号") { fontSize = AppTypography.defaultFontSize }
+                    .buttonStyle(WorkbenchButtonStyle())
                     .disabled(fontSize == AppTypography.defaultFontSize)
             }
             .formStyle(.grouped)

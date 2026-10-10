@@ -67,7 +67,7 @@ struct CommitDetailView: View {
                                 .background(!showAll && selected.id == file.id ? Color.accentColor.opacity(0.18) : Color.clear,
                                             in: RoundedRectangle(cornerRadius: 5))
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(WorkbenchHoverButtonStyle())
                             .help(file.path)
                             .finderContextMenu(path: localPath(file.path))
                             .id(file.id)
