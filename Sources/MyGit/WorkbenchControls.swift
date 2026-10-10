@@ -26,6 +26,38 @@ enum WorkbenchStyle {
     }
 }
 
+struct WorkbenchRowButtonStyle: ButtonStyle {
+    var isSelected = false
+
+    func makeBody(configuration: ButtonStyleConfiguration) -> some View {
+        Row(label: configuration.label, isSelected: isSelected, isPressed: configuration.isPressed)
+    }
+
+    private struct Row: View {
+        let label: ButtonStyleConfiguration.Label
+        let isSelected: Bool
+        let isPressed: Bool
+        @State private var isHovered = false
+
+        var body: some View {
+            label
+                .padding(.vertical, 5).padding(.horizontal, 6)
+                .background(isSelected ? WorkbenchStyle.selection
+                            : isPressed ? WorkbenchStyle.raised
+                            : isHovered ? WorkbenchStyle.surface : Color.clear)
+                .overlay {
+                    if isSelected && (isHovered || isPressed) {
+                        Color.white.opacity(isPressed ? 0.16 : 0.08)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .contentShape(Rectangle())
+                .onHover { isHovered = $0 }
+        }
+    }
+}
+
 struct WorkbenchButtonStyle: ButtonStyle {
     var emphasized = false
     @Environment(\.isEnabled) private var isEnabled

@@ -181,3 +181,17 @@
 "按合入历史列出相关提交；不代表逐行作者或冲突解决者。" = "Related incoming commits; not attribution of individual lines or conflict resolutions.";
 
 "正在读取合入来源…" = "Loading incoming history…";
+
+"选择工作树" = "Choose worktree";
+
+"选择提交记录仓库" = "Choose commit history repository";
+
+"全部仓库" = "All repositories";
+
+"暂无提交记录" = "No commits";
+
+"搜索本地分支" = "Search local branches";
+
+"显示工具临时分支（%ld）" = "Show tool temporary branches (%ld)";
+
+"没有匹配的分支" = "No matching branches";
