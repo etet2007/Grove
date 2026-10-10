@@ -51,3 +51,5 @@ MyGit 是一个原生 macOS Git 客户端，用于快速浏览同一工程内多
 运行 `swift test`。测试使用临时 Git 仓库，不修改已有项目。
 
 图标源文件为 `scripts/generate-icon.swift`。修改后运行 `zsh scripts/generate-icon.sh`，生成 `Resources/MyGitIcon.png` 和用于应用包的 `Resources/MyGitIcon.icns`。
+
+文件详情将纯重命名、二进制、空文件、仅权限变化、子模块提交及符号链接目标显示为摘要；混合 diff 按文件保留文本代码并展示摘要。子模块显示前后提交号，符号链接显示前后目标。文件类型转换或同时含正文修改时保留代码 diff。文件末尾缺少换行时提供中文或英文说明。

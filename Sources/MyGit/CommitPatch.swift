@@ -26,6 +26,18 @@ struct CommitFilePatch: Identifiable {
     var name: String { (path as NSString).lastPathComponent }
     var directory: String { (path as NSString).deletingLastPathComponent }
 
+    var binarySummaryTitle: String? {
+        guard isBinary else { return nil }
+        let image = GitClient.isImagePath(path)
+        switch change {
+        case .added: return image ? "新增图片" : "新增二进制文件"
+        case .deleted: return image ? "图片已删除" : "二进制文件已删除"
+        case .modified: return image ? "图片已修改" : "二进制文件已修改"
+        case .renamed: return image ? "图片已移动或重命名" : "二进制文件已移动或重命名"
+        case .copied: return image ? "图片已复制" : "二进制文件已复制"
+        }
+    }
+
     // Only replace metadata-only renames; preserve patches containing content or mode changes.
     var isPureRename: Bool {
         let lines = patch.components(separatedBy: "\n").filter { !$0.isEmpty }
@@ -47,7 +59,7 @@ struct CommitPatch {
     var additions: Int { files.reduce(0) { $0 + $1.additions } }
     var deletions: Int { files.reduce(0) { $0 + $1.deletions } }
 
-    static func parse(_ text: String) -> CommitPatch {
+    static func parse(_ text: String, prepareDiff: Bool = true) -> CommitPatch {
         let lines = text.components(separatedBy: "\n")
         let starts = lines.indices.filter { lines[$0].hasPrefix("diff --git ") }
         let files = starts.enumerated().map { index, start -> CommitFilePatch in
@@ -84,10 +96,10 @@ struct CommitPatch {
             let patch = section.joined(separator: "\n")
             return CommitFilePatch(id: index, path: path, oldPath: change == .renamed || change == .copied ? oldPath : nil,
                                    change: change, additions: additions, deletions: deletions,
-                                   isBinary: binary, patch: patch, diff: SplitDiff.parse(patch))
+                                   isBinary: binary, patch: patch, diff: prepareDiff ? SplitDiff.parse(patch) : SplitDiff(rows: [], hasChanges: false))
         }
         let header = lines.prefix { !$0.hasPrefix("diff --") }
-        return CommitPatch(files: files, fullDiff: SplitDiff.parse(text),
+        return CommitPatch(files: files, fullDiff: prepareDiff ? SplitDiff.parse(text) : SplitDiff(rows: [], hasChanges: false),
                            isMerge: header.contains { $0.hasPrefix("Merge: ") })
     }
 
