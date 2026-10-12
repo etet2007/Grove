@@ -12,7 +12,7 @@ private struct GroupCacheKey: Hashable {
     let projectID: UUID
     let repositories: [Repository]
     let group: WorktreeGroup
-    let commitLimit: Int
+    let commitLimits: [Int]
 }
 
 private struct GroupCacheEntry {
@@ -65,13 +65,78 @@ private struct MergeRequestCacheEntry {
     }
 }
 
+@MainActor final class CommitBrowserScope: Identifiable {
+    let id = UUID()
+    let repositoryID: UUID?
+    let detail = DetailState()
+
+    init(repositoryID: UUID?) { self.repositoryID = repositoryID }
+}
+
 @MainActor final class AppModel: ObservableObject {
     @Published private(set) var projects: [Project] = []
     @Published var selectedProjectID: UUID?
     @Published var selectedWorktreeGroupID: UUID?
     @Published private(set) var snapshots: [RepositorySnapshot] = []
     @Published private(set) var commits: [Commit] = []
-    let detailStates = [DetailState(), DetailState()]
+    private let changesState = DetailState()
+    @Published private(set) var commitScopes = [CommitBrowserScope(repositoryID: nil)]
+    @Published private(set) var commitRepositoryID: UUID?
+    private var commitScopeInitialized = false
+    private var rememberedCommitRepositories: [UUID: UUID?] = [:]
+    var currentCommitScope: CommitBrowserScope {
+        commitScopes.first { $0.repositoryID == commitRepositoryID }!
+    }
+    var detailStates: [DetailState] { [changesState, currentCommitScope.detail] }
+    private var allDetailStates: [DetailState] { [changesState] + commitScopes.map(\.detail) }
+    var browsingRepositoryID: UUID? { activeTab == 1 ? commitRepositoryID : focusedRepositoryID }
+    var visibleCommits: [Commit] { commits.filter { commitRepositoryID == nil || $0.repositoryID == commitRepositoryID } }
+
+    func selectBrowsingRepository(_ id: UUID?) {
+        if activeTab == 1 { selectCommitRepository(id) }
+        else {
+            if focusedRepositoryID != id { changesState.clear() }
+            focusedRepositoryID = id
+        }
+    }
+
+    func selectCommitRepository(_ id: UUID?) {
+        guard id == nil || selectedProject?.repositories.contains(where: { $0.id == id }) == true else { return }
+        if !commitScopes.contains(where: { $0.repositoryID == id }) {
+            commitScopes.append(CommitBrowserScope(repositoryID: id))
+            observeDetails()
+        }
+        commitRepositoryID = id
+        commitScopeInitialized = true
+        if let projectID = selectedProjectID { rememberedCommitRepositories[projectID] = .some(id) }
+    }
+
+    private func reconcileCommitRepository() {
+        let repositoryIDs = Set(selectedProject?.repositories.map(\.id) ?? [])
+        let removed = commitScopes.filter { $0.repositoryID.map { !repositoryIDs.contains($0) } ?? false }
+        if !removed.isEmpty {
+            removed.forEach { $0.detail.clear() }
+            // Select a surviving scope before publishing removal of the active one.
+            if removed.contains(where: { $0.repositoryID == commitRepositoryID }) { commitRepositoryID = nil }
+            commitScopes.removeAll { $0.repositoryID.map { !repositoryIDs.contains($0) } ?? false }
+            commitScopeInitialized = false
+            observeDetails()
+        }
+        if !commitScopeInitialized || (commitRepositoryID != nil && !snapshots.contains(where: { $0.repository.id == commitRepositoryID && $0.selected != nil })) {
+            let remembered = selectedProjectID.flatMap { rememberedCommitRepositories[$0] }
+            if let remembered, remembered == nil || snapshots.contains(where: { $0.repository.id == remembered && $0.selected != nil }) {
+                selectCommitRepository(remembered)
+            } else if let first = snapshots.first(where: { $0.selected != nil }) {
+                selectCommitRepository(first.repository.id)
+            }
+        }
+    }
+
+    private func observeDetails() {
+        detailObservers = allDetailStates.map { state in
+            state.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        }
+    }
     private var detailState: DetailState { detailStates[activeTab] }
     var selectedFile: ChangedFile? {
         get { detailState.selectedFile }
@@ -109,7 +174,7 @@ private struct MergeRequestCacheEntry {
     private var refreshTask: Task<Void, Never>?
     private var refreshSession: GitReadSession?
     private var refreshGeneration = 0
-    private var commitLimit = 30
+    private var repositoryCommitLimits: [UUID: Int] = [:]
     // Memory only: retain recent views without persisting repository contents.
     private var groupCache: [GroupCacheKey: GroupCacheEntry] = [:]
     private var historyCache: [HistoryCacheKey: [Commit]] = [:]
@@ -117,12 +182,16 @@ private struct MergeRequestCacheEntry {
     private var currentCacheKey: GroupCacheKey? {
         guard let project = selectedProject, let group = selectedGroup else { return nil }
         return GroupCacheKey(projectID: project.id, repositories: project.repositories,
-                             group: group, commitLimit: commitLimit)
+                             group: group, commitLimits: project.repositories.map { repositoryCommitLimits[$0.id] ?? 30 })
     }
 
     private func restoreCachedView() {
         changesDetailNeedsRefresh = false
-        detailStates.forEach { $0.clear() }
+        allDetailStates.forEach { $0.clear() }
+        commitScopes = [CommitBrowserScope(repositoryID: nil)]
+        commitRepositoryID = nil
+        commitScopeInitialized = false
+        observeDetails()
         if let key = currentCacheKey, var entry = groupCache[key] {
             entry.lastUsed = Date()
             groupCache[key] = entry
@@ -131,6 +200,7 @@ private struct MergeRequestCacheEntry {
         } else {
             snapshots = []; commits = []
         }
+        reconcileCommitRepository()
     }
 
     private func cacheCurrentView() {
@@ -159,9 +229,7 @@ private struct MergeRequestCacheEntry {
             selectedWorktreeGroupID = selectedProject?.worktreeGroups.first(where: { $0.id == config.selectedWorktreeGroupID })?.id
                 ?? selectedProject?.worktreeGroups.first?.id
         }
-        detailObservers = detailStates.map { state in
-            state.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
-        }
+        observeDetails()
         changeMonitor.onChange = { [weak self] paths in self?.repositoryPathsChanged(paths) }
         refresh()
     }
@@ -187,6 +255,8 @@ private struct MergeRequestCacheEntry {
         projects.append(project)
         selectedProjectID = project.id
         selectedWorktreeGroupID = project.worktreeGroups[0].id
+        focusedRepositoryID = nil
+        restoreCachedView()
         save(); refresh()
     }
 
@@ -245,6 +315,8 @@ private struct MergeRequestCacheEntry {
         let group = WorktreeGroup(name: name, branch: nil)
         projects[index].worktreeGroups.append(group)
         selectedWorktreeGroupID = group.id
+        focusedRepositoryID = nil
+        restoreCachedView()
         save(); refresh()
     }
 
@@ -255,7 +327,11 @@ private struct MergeRequestCacheEntry {
             projects[index].hiddenBranches.append(branch)
         }
         projects[index].worktreeGroups.removeAll { $0.id == id }
-        if selectedWorktreeGroupID == id { selectedWorktreeGroupID = projects[index].worktreeGroups.first?.id }
+        if selectedWorktreeGroupID == id {
+            selectedWorktreeGroupID = projects[index].worktreeGroups.first?.id
+            focusedRepositoryID = nil
+            restoreCachedView()
+        }
         save(); refresh()
     }
 
@@ -299,7 +375,7 @@ private struct MergeRequestCacheEntry {
         refreshSession?.cancel()
         refreshGeneration += 1
         isRefreshing = false
-        detailStates.forEach { $0.clear() }
+        allDetailStates.forEach { $0.clear() }
         let failure = await Task.detached(priority: .userInitiated) { () -> String? in
             do { try GitClient.switchBranch(branch, in: checkoutPath); return nil }
             catch { return error.localizedDescription }
@@ -339,7 +415,7 @@ private struct MergeRequestCacheEntry {
         refreshSession?.cancel()
         refreshGeneration += 1
         isRefreshing = false
-        detailStates.forEach { $0.cancelRead(); $0.generation += 1 }
+        allDetailStates.forEach { $0.cancelRead(); $0.generation += 1 }
         let failure = await Task.detached(priority: .userInitiated) { () -> String? in
             do { try DiffDiscard.apply(request); return nil }
             catch { return error.localizedDescription }
@@ -358,8 +434,9 @@ private struct MergeRequestCacheEntry {
     }
 
     func loadMoreCommits() {
-        commitLimit += 30
-        refresh()
+        let ids = commitRepositoryID.map { [$0] } ?? (selectedProject?.repositories.map(\.id) ?? [])
+        for id in ids { repositoryCommitLimits[id] = (repositoryCommitLimits[id] ?? 30) + 30 }
+        refresh(useCachedHistory: true)
     }
 
     private func repositoryPathsChanged(_ paths: [String]) {
@@ -490,7 +567,7 @@ private struct MergeRequestCacheEntry {
                 || !previousSnapshots.contains(where: { $0.repository.id == repository.id && $0.selected == selected })
                 ? selected.path : nil
         })
-        let limit = commitLimit
+        let limits = repositoryCommitLimits
         let cachedHistory = useCachedHistory ? historyCache : [:]
         let cachedMergeRequests = useCachedHistory ? mergeRequestCache : [:]
         refreshTask = Task.detached(priority: .utility) {
@@ -529,10 +606,12 @@ private struct MergeRequestCacheEntry {
             await MainActor.run {
                 guard self.refreshGeneration == generation, self.selectedProjectID == projectID else { return }
                 if self.snapshots != snapshots { self.snapshots = snapshots }
+                self.reconcileCommitRepository()
             }
             let histories = await GitClient.$readSession.withValue(session) {
                 await boundedConcurrentMap(snapshots) { snapshot -> (HistoryCacheKey, [Commit])? in
                     guard let selected = snapshot.selected else { return nil }
+                    let limit = limits[snapshot.repository.id] ?? 30
                     let key = HistoryCacheKey(repositoryID: snapshot.repository.id, path: selected.path,
                                               head: selected.head, limit: limit)
                     guard let history = cachedHistory[key]

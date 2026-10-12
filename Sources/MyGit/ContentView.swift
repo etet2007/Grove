@@ -1,24 +1,5 @@
 import SwiftUI
 
-private struct MergeRequestRowStyle: ButtonStyle {
-    func makeBody(configuration: ButtonStyleConfiguration) -> some View {
-        HoverRow(label: configuration.label, isPressed: configuration.isPressed)
-    }
-
-    private struct HoverRow: View {
-        let label: ButtonStyleConfiguration.Label
-        let isPressed: Bool
-        @State private var isHovered = false
-
-        var body: some View {
-            label
-                .background(isPressed ? WorkbenchStyle.raised : (isHovered ? WorkbenchStyle.surface : Color.clear))
-                .clipShape(RoundedRectangle(cornerRadius: 5))
-                .onHover { isHovered = $0 }
-        }
-    }
-}
-
 private struct IconActionButton: View {
     let systemName: String
     let hint: String
@@ -39,6 +20,32 @@ private struct IconActionButton: View {
         .onHover { isHovered = $0 }
         .help(AppLocalization.text(hint))
         .accessibilityLabel(AppLocalization.text(hint))
+    }
+}
+
+// Shared by branch and worktree pickers so long lists have a bounded viewport.
+private struct PickerContentHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 360
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+struct PickerScrollView<Content: View>: View {
+    var width: CGFloat = 360
+    @ViewBuilder var content: () -> Content
+    @State private var contentHeight: CGFloat = 360
+
+    var body: some View {
+        ScrollView {
+            content()
+                .fixedSize(horizontal: false, vertical: true)
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(key: PickerContentHeight.self, value: geometry.size.height)
+                    }
+                }
+        }
+        .frame(width: width, height: min(360, max(40, contentHeight)))
+        .onPreferenceChange(PickerContentHeight.self) { contentHeight = $0 }
     }
 }
 
@@ -64,15 +71,12 @@ private struct WorkbenchMenu<Content: View, Label: View>: View {
         .accessibilityLabel(Text(LocalizedStringKey(title)))
         .onHover { isHovered = $0 }
         .popover(isPresented: $isMenuOpen, arrowEdge: arrowEdge) {
-            ScrollView {
+            PickerScrollView(width: 320) {
                 VStack(alignment: .leading, spacing: 4) { content() }
                     .buttonStyle(PickerChoiceStyle { isMenuOpen = false })
                     .appFont(size: 12)
                     .padding(8)
             }
-            .frame(width: 320)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxHeight: 360)
             .background(WorkbenchStyle.sidebar)
             .preferredColorScheme(.dark)
         }
@@ -92,7 +96,7 @@ private struct PickerChoiceStyle: PrimitiveButtonStyle {
                 .padding(.horizontal, 8).padding(.vertical, 7)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(MergeRequestRowStyle())
+        .buttonStyle(WorkbenchHoverButtonStyle())
     }
 }
 
@@ -148,7 +152,7 @@ private struct WorkbenchTabButton: View {
             .background(selected ? WorkbenchStyle.surface : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 5))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(WorkbenchHoverButtonStyle())
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
@@ -163,6 +167,7 @@ enum DetailLayout: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.openURL) private var openURL
+    @FocusState private var focusedCommitScopeID: UUID?
     @State private var nameAction: NameAction?
     @State private var nameInput = ""
     @State private var quickQuery = ""
@@ -276,6 +281,7 @@ struct ContentView: View {
                                     }
                                 }
                                 .appFont(size: 11)
+                                .workbenchHoverFeedback()
                             }
                         }
                         VStack(alignment: .leading, spacing: 6) {
@@ -326,7 +332,7 @@ struct ContentView: View {
                     .frame(height: 28)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(WorkbenchHoverButtonStyle())
                 .accessibilityLabel(AppLocalization.text(expanded ? "收起仓库组 %@" : "展开仓库组 %@", group.name))
                 IconActionButton(systemName: "folder.badge.plus", hint: AppLocalization.text("导入仓库到%@", group.name)) {
                     chooseRepositories(for: group.id)
@@ -370,9 +376,13 @@ struct ContentView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(WorkbenchHoverButtonStyle())
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .contextMenu {
+            if let branch = group.branch {
+                CopyBranchNameButton(branch: branch)
+                if !group.isPrimary { Divider() }
+            }
             if !group.isPrimary {
                 Button("删除工作树组", role: .destructive) { model.removeWorktreeGroup(group.id) }
             }
@@ -443,20 +453,10 @@ struct ContentView: View {
     }
 
     private func repositoryRow(_ repository: Repository) -> some View {
+        let isSelected = model.browsingRepositoryID == repository.id
         let snapshot = model.snapshots.first { $0.repository.id == repository.id }
         return VStack(alignment: .leading, spacing: 0) {
-            WorkbenchMenu(title: repository.name, arrowEdge: .leading) {
-                Button("恢复自动匹配") { model.selectWorktree(nil, for: repository.id) }
-                Divider()
-                ForEach(snapshot?.worktrees ?? []) { worktree in
-                    Button {
-                        model.selectWorktree(worktree.path, for: repository.id)
-                    } label: {
-                        Text(AppLocalization.text("%@ · %@", worktree.branch ?? AppLocalization.text("分离 HEAD"), worktree.isPrimary ? AppLocalization.text("主目录") : URL(fileURLWithPath: worktree.path).lastPathComponent))
-                    }
-                    .finderContextMenu(path: worktree.path)
-                }
-            } label: {
+            Button { model.selectBrowsingRepository(repository.id) } label: {
                 HStack(alignment: .top, spacing: 6) {
                     Circle().fill(WorkbenchStyle.repositoryColor(repository.name))
                         .frame(width: 6, height: 6)
@@ -467,7 +467,7 @@ struct ContentView: View {
                     Spacer(minLength: 0)
                     if let count = snapshot?.files.count, count > 0 {
                         Text("\(count)")
-                            .appFont(size: 10, design: .monospaced).foregroundStyle(WorkbenchStyle.accent)
+                            .appFont(size: 10, design: .monospaced).foregroundStyle(isSelected ? Color.white : WorkbenchStyle.accent)
                     }
                 }
                 .padding(.leading, 26)
@@ -476,12 +476,37 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, minHeight: 24)
                 .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             if let selected = snapshot?.selected {
-                BranchPicker(repositoryID: repository.id, worktree: selected)
-                    .appFont(size: 10, design: .monospaced).foregroundStyle(WorkbenchStyle.muted)
-                    .padding(.leading, 48).padding(.trailing, 10).padding(.bottom, 6)
+                HStack(spacing: 4) {
+                    BranchPicker(repositoryID: repository.id, worktree: selected)
+                        .appFont(size: 10, design: .monospaced).foregroundStyle(isSelected ? Color.white.opacity(0.8) : WorkbenchStyle.muted)
+                    Spacer(minLength: 0)
+                    WorkbenchMenu(title: "选择工作树", arrowEdge: .leading) {
+                        Button("恢复自动匹配") { model.selectWorktree(nil, for: repository.id) }
+                        Divider()
+                        ForEach(snapshot?.worktrees ?? []) { worktree in
+                            Button { model.selectWorktree(worktree.path, for: repository.id) } label: {
+                                HStack {
+                                    Text(AppLocalization.text("%@ · %@", worktree.branch ?? AppLocalization.text("分离 HEAD"), worktree.isPrimary ? AppLocalization.text("主目录") : URL(fileURLWithPath: worktree.path).lastPathComponent))
+                                    if selected.path == worktree.path { Image(systemName: "checkmark") }
+                                }
+                            }
+                            .finderContextMenu(path: worktree.path)
+                        }
+                    } label: {
+                        Image(systemName: "folder.badge.gearshape")
+                            .appFont(size: 11).frame(width: 24, height: 22)
+                    }
+                    .help("选择工作树")
+                }
+                .padding(.leading, 48).padding(.trailing, 10).padding(.bottom, 6)
             }
         }
+        .background(isSelected ? WorkbenchStyle.selection : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .workbenchHoverFeedback()
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .focusEffectDisabled()
@@ -547,7 +572,7 @@ struct ContentView: View {
         .buttonStyle(WorkbenchButtonStyle(emphasized: true))
         .fixedSize()
         .disabled(!model.snapshots.contains {
-            (model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID) && $0.mergeRequestURL != nil
+            (model.browsingRepositoryID == nil || $0.repository.id == model.browsingRepositoryID) && $0.mergeRequestURL != nil
         })
         .help("选择仓库，在浏览器中打开 GitLab 创建页面")
         .popover(isPresented: $showMergeRequestPicker, arrowEdge: .top) {
@@ -557,7 +582,7 @@ struct ContentView: View {
                     .padding(.horizontal, 8).padding(.vertical, 4)
                 Divider()
                 ForEach(model.snapshots.filter {
-                    model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID
+                    model.browsingRepositoryID == nil || $0.repository.id == model.browsingRepositoryID
                 }) { snapshot in
                     Button {
                         guard let url = snapshot.mergeRequestURL else { return }
@@ -582,7 +607,7 @@ struct ContentView: View {
                         .padding(.vertical, 6).padding(.horizontal, 8)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(MergeRequestRowStyle())
+                    .buttonStyle(WorkbenchHoverButtonStyle())
                     .disabled(snapshot.mergeRequestURL == nil)
                 }
             }
@@ -596,14 +621,24 @@ struct ContentView: View {
     private var mainArea: some View {
         VStack(spacing: 0) {
             HSplitView {
-                if model.activeTab == 0 { changesList } else { commitsList }
+                ZStack {
+                    changesList
+                        .opacity(model.activeTab == 0 ? 1 : 0)
+                        .allowsHitTesting(model.activeTab == 0)
+                        .disabled(model.activeTab != 0)
+                        .accessibilityHidden(model.activeTab != 0)
+                    commitsList
+                        .opacity(model.activeTab == 1 ? 1 : 0)
+                        .allowsHitTesting(model.activeTab == 1)
+                        .accessibilityHidden(model.activeTab != 1)
+                }
                 detailPane
             }
             HStack {
                 Text(AppLocalization.text("%ld repositories · %ld changed files", model.snapshots.count, model.snapshots.reduce(0) { $0 + $1.files.count }))
                 Spacer()
-                if model.focusedRepositoryID != nil {
-                    Button("显示全部仓库") { model.focusedRepositoryID = nil }.buttonStyle(.plain)
+                if model.browsingRepositoryID != nil {
+                    Button("显示全部仓库") { model.selectBrowsingRepository(nil) }.buttonStyle(WorkbenchHoverButtonStyle())
                         .foregroundStyle(WorkbenchStyle.accent)
                 }
             }
@@ -639,7 +674,7 @@ struct ContentView: View {
                                     Button { model.selectFile(file) } label: {
                                         ChangedFileRow(file: file, selected: model.selectedFile?.id == file.id)
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(WorkbenchHoverButtonStyle())
                                     .finderContextMenu(path: snapshot.selected.map {
                                         URL(fileURLWithPath: $0.path).appendingPathComponent(file.path).path
                                     })
@@ -679,6 +714,7 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                 }
+                .disabled(!hasContent)
                 HStack(spacing: 6) {
                     if let selected = snapshot.selected {
                         BranchPicker(repositoryID: repositoryID, worktree: selected)
@@ -702,11 +738,13 @@ struct ContentView: View {
                 }
                 .appFont(size: 10).fixedSize()
             }
+            .disabled(!hasContent)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(WorkbenchHoverButtonStyle())
         .padding(.horizontal, 12).padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(WorkbenchStyle.sidebar)
+        .workbenchHoverFeedback(enabled: hasContent)
         .overlay(alignment: .top) { Rectangle().fill(WorkbenchStyle.border.opacity(0.65)).frame(height: 1) }
         .contentShape(Rectangle())
         .finderContextMenu(path: snapshot.selected?.path ?? snapshot.repository.path)
@@ -719,17 +757,82 @@ struct ContentView: View {
     }
 
     private var commitsList: some View {
+        VStack(spacing: 0) {
+            WorkbenchMenu(title: "选择提交记录仓库") {
+                Button { model.selectCommitRepository(nil) } label: {
+                    HStack {
+                        Text("全部仓库")
+                        Spacer()
+                        if model.commitRepositoryID == nil { Image(systemName: "checkmark") }
+                    }
+                }
+                Divider()
+                ForEach(model.selectedProject?.repositories ?? []) { repository in
+                    Button { model.selectCommitRepository(repository.id) } label: {
+                        HStack {
+                            Text(repository.name)
+                            Spacer()
+                            if model.commitRepositoryID == repository.id { Image(systemName: "checkmark") }
+                        }
+                    }
+                    .disabled(!model.snapshots.contains { $0.repository.id == repository.id && $0.selected != nil })
+                }
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(model.selectedProject?.repositories.first { $0.id == model.commitRepositoryID }?.name ?? AppLocalization.text("全部仓库"))
+                            .appFont(size: 12, weight: .semibold)
+                        if let snapshot = model.snapshots.first(where: { $0.repository.id == model.commitRepositoryID }) {
+                            Text(snapshot.selected?.branch ?? AppLocalization.text("分离 HEAD"))
+                                .appFont(size: 10, design: .monospaced).foregroundStyle(WorkbenchStyle.muted)
+                        }
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down").appFont(size: 10)
+                }
+                .padding(12)
+            }
+            Divider()
+            ZStack {
+                ForEach(model.commitScopes) { scope in
+                    commitList(scope)
+                        .focused($focusedCommitScopeID, equals: scope.id)
+                        .disabled(scope.repositoryID != model.commitRepositoryID || model.activeTab != 1)
+                        .opacity(scope.repositoryID == model.commitRepositoryID ? 1 : 0)
+                        .allowsHitTesting(scope.repositoryID == model.commitRepositoryID)
+                        .accessibilityHidden(scope.repositoryID != model.commitRepositoryID)
+                }
+            }
+        }
+        .frame(minWidth: 280, idealWidth: 340)
+        .background(WorkbenchStyle.background)
+        .onChange(of: model.commitRepositoryID) { _, _ in
+            if model.activeTab == 1 { focusedCommitScopeID = model.currentCommitScope.id }
+        }
+        .onChange(of: model.activeTab) { _, tab in
+            focusedCommitScopeID = tab == 1 ? model.currentCommitScope.id : nil
+        }
+    }
+
+    private func commitList(_ scope: CommitBrowserScope) -> some View {
         List {
-            ForEach(model.commits.filter { model.focusedRepositoryID == nil || $0.repositoryID == model.focusedRepositoryID }) { commit in
+            ForEach(model.commits.filter { scope.repositoryID == nil || $0.repositoryID == scope.repositoryID }) { commit in
                 Button { model.selectCommit(commit) } label: {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(commit.subject).lineLimit(2)
-                            .appFont(size: 12, weight: model.selectedCommit == commit ? .semibold : .medium)
-                        HStack {
-                            Text(model.selectedProject?.repositories.first(where: { $0.id == commit.repositoryID })?.name ?? "仓库")
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(commit.subject).lineLimit(2)
+                                .appFont(size: 12, weight: scope.detail.selectedCommit == commit ? .semibold : .medium)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             Text(commit.hash.prefix(7))
+                                .appFont(size: 10, design: .monospaced)
+                                .foregroundStyle(WorkbenchStyle.muted)
+                                .fixedSize()
+                                .help(commit.hash)
                         }
-                        .appFont(size: 10).foregroundStyle(WorkbenchStyle.muted)
+                        if scope.repositoryID == nil {
+                            Text(model.selectedProject?.repositories.first(where: { $0.id == commit.repositoryID })?.name ?? "仓库")
+                                .appFont(size: 10).foregroundStyle(WorkbenchStyle.muted)
+                        }
                         HStack(spacing: 6) {
                             Image(systemName: "person")
                                 .foregroundStyle(WorkbenchStyle.committerColor(commit.committer))
@@ -742,29 +845,35 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .padding(.vertical, 3)
+                .buttonStyle(WorkbenchRowButtonStyle(isSelected: scope.detail.selectedCommit == commit))
+                .listRowSeparator(.hidden)
+            }
+            if model.commits.filter({ scope.repositoryID == nil || $0.repositoryID == scope.repositoryID }).isEmpty {
+                Text(model.isRefreshing ? "正在读取…" : "暂无提交记录")
+                    .foregroundStyle(WorkbenchStyle.muted).padding(.vertical, 12)
+                    .listRowSeparator(.hidden)
             }
             Button("加载更早提交") { model.loadMoreCommits() }
                 .buttonStyle(WorkbenchButtonStyle())
                 .frame(maxWidth: .infinity)
+                .listRowSeparator(.hidden)
+                .disabled(model.isRefreshing || !model.snapshots.contains { $0.selected != nil && (scope.repositoryID == nil || $0.repository.id == scope.repositoryID) })
         }
-        // A new timeline must not inherit the previous checkout group's native
-        // row anchors, especially when cached histories share commit IDs.
-        .id(model.selectedWorktreeGroupID)
-        .id(model.selectedProjectID)
-        .frame(minWidth: 280, idealWidth: 340)
         .scrollContentBackground(.hidden)
         .background(WorkbenchStyle.background)
     }
 
     private var detailPane: some View {
         ZStack {
-            ForEach(0..<2) { tab in
-                DetailPaneView(state: model.detailStates[tab], tab: tab)
-                    .opacity(model.activeTab == tab ? 1 : 0)
-                    .allowsHitTesting(model.activeTab == tab)
-                    .accessibilityHidden(model.activeTab != tab)
+            DetailPaneView(state: model.detailStates[0], tab: 0)
+                .opacity(model.activeTab == 0 ? 1 : 0)
+                .allowsHitTesting(model.activeTab == 0)
+                .accessibilityHidden(model.activeTab != 0)
+            ForEach(model.commitScopes) { scope in
+                DetailPaneView(state: scope.detail, tab: 1)
+                    .opacity(model.activeTab == 1 && scope.repositoryID == model.commitRepositoryID ? 1 : 0)
+                    .allowsHitTesting(model.activeTab == 1 && scope.repositoryID == model.commitRepositoryID)
+                    .accessibilityHidden(model.activeTab != 1 || scope.repositoryID != model.commitRepositoryID)
             }
         }
         .frame(minWidth: 430)
@@ -838,7 +947,7 @@ struct ContentView: View {
                                             in: RoundedRectangle(cornerRadius: 6))
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(MergeRequestRowStyle())
+                            .buttonStyle(WorkbenchHoverButtonStyle())
                             .accessibilityAddTraits(index == quickSelection ? [.isSelected] : [])
                             .id(result.id)
                         }
@@ -876,7 +985,7 @@ struct ContentView: View {
     private func chooseQuickResult(_ result: QuickResult) {
         model.selectProject(result.projectID)
         if let groupID = result.groupID { model.selectWorktreeGroup(groupID) }
-        if let repositoryID = result.repositoryID { model.focusedRepositoryID = repositoryID }
+        if let repositoryID = result.repositoryID { model.selectBrowsingRepository(repositoryID) }
         model.showQuickSwitch = false
     }
 
@@ -1104,6 +1213,14 @@ private struct DetailPaneView: View {
         } else if let commit = state.selectedCommit {
             VStack(alignment: .leading, spacing: 4) {
                 Text(commit.subject).appFont(size: 13, weight: .semibold).lineLimit(1)
+                    .textSelection(.enabled)
+                    .help(commit.subject)
+                    .contextMenu {
+                        Button(AppLocalization.text("复制提交标题")) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(commit.subject, forType: .string)
+                        }
+                    }
                 Text("\(commit.committer) · \(commit.formattedDate)")
                     .appFont(size: 11).foregroundStyle(.secondary)
                     .lineLimit(1).help("\(commit.committer) · \(commit.formattedDate)")

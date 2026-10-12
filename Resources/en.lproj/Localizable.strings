@@ -209,3 +209,21 @@
 "文件末尾没有换行符" = "No newline at end of file";
 "新增二进制文件，无法显示文本差异。\n文件路径：%@" = "Binary file added; text differences are unavailable.\nFile path: %@";
 "新增空文件\n文件路径：%@" = "Empty file added\nFile path: %@";
+
+"选择工作树" = "Choose worktree";
+
+"选择提交记录仓库" = "Choose commit history repository";
+
+"全部仓库" = "All repositories";
+
+"暂无提交记录" = "No commits";
+
+"搜索本地分支" = "Search local branches";
+
+"显示工具临时分支（%ld）" = "Show tool temporary branches (%ld)";
+
+"没有匹配的分支" = "No matching branches";
+
+"复制提交标题" = "Copy Commit Title";
+
+"复制分支名" = "Copy Branch Name";
