@@ -379,6 +379,10 @@ struct ContentView: View {
         .buttonStyle(WorkbenchHoverButtonStyle())
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .contextMenu {
+            if let branch = group.branch {
+                CopyBranchNameButton(branch: branch)
+                if !group.isPrimary { Divider() }
+            }
             if !group.isPrimary {
                 Button("删除工作树组", role: .destructive) { model.removeWorktreeGroup(group.id) }
             }
@@ -1209,6 +1213,14 @@ private struct DetailPaneView: View {
         } else if let commit = state.selectedCommit {
             VStack(alignment: .leading, spacing: 4) {
                 Text(commit.subject).appFont(size: 13, weight: .semibold).lineLimit(1)
+                    .textSelection(.enabled)
+                    .help(commit.subject)
+                    .contextMenu {
+                        Button(AppLocalization.text("复制提交标题")) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(commit.subject, forType: .string)
+                        }
+                    }
                 Text("\(commit.committer) · \(commit.formattedDate)")
                     .appFont(size: 11).foregroundStyle(.secondary)
                     .lineLimit(1).help("\(commit.committer) · \(commit.formattedDate)")

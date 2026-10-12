@@ -195,3 +195,7 @@
 "显示工具临时分支（%ld）" = "Show tool temporary branches (%ld)";
 
 "没有匹配的分支" = "No matching branches";
+
+"复制提交标题" = "Copy Commit Title";
+
+"复制分支名" = "Copy Branch Name";

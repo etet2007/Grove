@@ -1,11 +1,11 @@
 import SwiftUI
 
 enum WorkbenchStyle {
-    static let background = Color(red: 0.078, green: 0.078, blue: 0.086)
-    static let sidebar = Color(red: 0.094, green: 0.094, blue: 0.106)
-    static let surface = Color(red: 0.149, green: 0.149, blue: 0.169)
-    static let raised = Color(red: 0.165, green: 0.165, blue: 0.188)
-    static let border = Color(red: 0.22, green: 0.22, blue: 0.245)
+    static let background = Color(red: 37 / 255, green: 38 / 255, blue: 38 / 255)
+    static let sidebar = Color(red: 33 / 255, green: 33 / 255, blue: 33 / 255)
+    static let surface = Color(red: 46 / 255, green: 46 / 255, blue: 46 / 255)
+    static let raised = Color(red: 54 / 255, green: 55 / 255, blue: 55 / 255)
+    static let border = Color(red: 57 / 255, green: 58 / 255, blue: 58 / 255)
     static let accent = Color(red: 0.22, green: 0.74, blue: 0.97)
     static let selection = Color(red: 0.008, green: 0.518, blue: 0.78)
     static let muted = Color(red: 0.63, green: 0.63, blue: 0.67)

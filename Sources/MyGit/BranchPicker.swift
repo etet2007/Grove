@@ -1,5 +1,18 @@
 import SwiftUI
 
+struct CopyBranchNameButton: View {
+    let branch: String
+
+    var body: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(branch, forType: .string)
+        } label: {
+            Label(AppLocalization.text("复制分支名"), systemImage: "doc.on.doc")
+        }
+    }
+}
+
 enum BranchPickerOptions {
     static func isToolStash(_ name: String) -> Bool {
         name.range(of: "^ugit-stash/[0-9a-fA-F]{7,40}-[13]$", options: .regularExpression) != nil
@@ -48,6 +61,11 @@ struct BranchPicker: View {
         .disabled(model.isSwitchingBranch || model.isDiscarding)
         .help(AppLocalization.text("切换本地分支"))
         .accessibilityLabel(AppLocalization.text("切换本地分支：%@", worktree.branch ?? AppLocalization.text("分离 HEAD")))
+        .contextMenu {
+            if let branch = worktree.branch {
+                CopyBranchNameButton(branch: branch)
+            }
+        }
         .popover(isPresented: $isPresented, arrowEdge: .trailing) {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 8) {
