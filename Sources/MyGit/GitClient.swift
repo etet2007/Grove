@@ -4,6 +4,7 @@ struct ImageDiffSide {
     let data: Data?
     let byteCount: Int?
     let message: String?
+    var svgData: Data? = nil
 }
 
 struct ImageDiffPreview {
@@ -66,7 +67,7 @@ struct GitClient {
 
 
     private static let gitURL = URL(fileURLWithPath: "/usr/bin/git")
-    private static let imageExtensions: Set<String> = ["webp", "png", "jpg", "jpeg", "gif", "heic", "heif", "tif", "tiff", "bmp", "avif"]
+    private static let imageExtensions: Set<String> = ["webp", "png", "jpg", "jpeg", "gif", "heic", "heif", "tif", "tiff", "bmp", "avif", "svg"]
     private static let imagePreviewLimit = 20_000_000
 
     static func run(_ args: [String], in directory: String) throws -> Data {
@@ -309,8 +310,38 @@ struct GitClient {
     }
 
     static func imagePreview(for file: ChangedFile, in worktree: String, mode: DiffMode) -> ImageDiffPreview? {
-        guard isImagePath(file.path) else { return nil }
+        let ext = URL(fileURLWithPath: file.path).pathExtension.lowercased()
+        guard isImagePath(file.path) || ext == "xml" else { return nil }
+        let raw = readImageVersions(for: file, in: worktree, mode: mode)
+        var recognizedVector = false
+        func prepare(_ side: ImageDiffSide) -> ImageDiffSide {
+            guard let data = side.data else { return side }
+            if ext == "svg" {
+                var result = side
+                result.svgData = data
+                return result
+            }
+            guard ext == "xml", let conversion = VectorDrawablePreview.convert(data) else { return side }
+            recognizedVector = true
+            switch conversion {
+            case .success(let svg):
+                var result = side
+                result.svgData = Data(svg.utf8)
+                return result
+            case .failure(let error):
+                return ImageDiffSide(data: nil, byteCount: side.byteCount, message: error.localizedDescription)
+            }
+        }
+        let old = prepare(raw.old), new = prepare(raw.new)
+        guard ext != "xml" || recognizedVector else { return nil }
+        func xmlSide(_ side: ImageDiffSide) -> ImageDiffSide {
+            guard ext == "xml", side.data != nil, side.svgData == nil else { return side }
+            return ImageDiffSide(data: nil, byteCount: side.byteCount, message: AppLocalization.text("此版本不是 Android 矢量图"))
+        }
+        return ImageDiffPreview(old: xmlSide(old), new: xmlSide(new))
+    }
 
+    private static func readImageVersions(for file: ChangedFile, in worktree: String, mode: DiffMode) -> ImageDiffPreview {
         func blob(_ revision: String) -> ImageDiffSide {
             guard let sizeText = try? text(["cat-file", "-s", revision], in: worktree),
                   let size = Int(sizeText.trimmingCharacters(in: .whitespacesAndNewlines)) else {

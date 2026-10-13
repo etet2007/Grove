@@ -1059,7 +1059,10 @@ private struct ImageDiffView: View {
                 }
             }
             ZStack {
-                if let data = value.data, let image = NSImage(data: data) {
+                if let svg = value.svgData {
+                    SVGPreviewView(data: svg)
+                        .frame(maxWidth: 260, maxHeight: 260)
+                } else if let data = value.data, let image = NSImage(data: data) {
                     Image(nsImage: image)
                         .resizable()
                         .interpolation(.high)
