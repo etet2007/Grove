@@ -29,52 +29,174 @@ extension View {
     }
 }
 
+enum SettingsPane: String, CaseIterable, Identifiable {
+    case general, commit
+    var id: String { rawValue }
+    var title: String { self == .general ? "通用" : "提交" }
+    var icon: String { self == .general ? "slider.horizontal.3" : "checkmark.circle" }
+}
+
 struct SettingsView: View {
+    @State private var selection: SettingsPane = .general
+
+    var body: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 24) {
+                Text("设置").font(.system(size: 20, weight: .semibold)).padding(.horizontal, 12)
+                VStack(spacing: 6) {
+                    ForEach(SettingsPane.allCases) { pane in
+                        Button { selection = pane } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: pane.icon)
+                                    .font(.system(size: 15, weight: .medium))
+                                    .frame(width: 28, height: 28)
+                                    .background(selection == pane ? WorkbenchStyle.selection : WorkbenchStyle.surface,
+                                                in: RoundedRectangle(cornerRadius: 7))
+                                Text(LocalizedStringKey(pane.title)).font(.system(size: 13, weight: .medium))
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 8)
+                            .background(selection == pane ? Color.white.opacity(0.06) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 9))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(WorkbenchHoverButtonStyle())
+                        .accessibilityAddTraits(selection == pane ? [.isSelected] : [])
+                    }
+                }
+                Spacer()
+                Text("MyGit").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+            }
+            .padding(16).padding(.top, 12)
+            .frame(width: 190)
+            .frame(maxHeight: .infinity)
+            .background(WorkbenchStyle.sidebar)
+            Rectangle().fill(WorkbenchStyle.border).frame(width: 1)
+            Group {
+                switch selection {
+                case .general: GeneralSettingsView()
+                case .commit: CommitSettingsView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(minWidth: 820, idealWidth: 960, maxWidth: .infinity,
+               minHeight: 620, idealHeight: 760, maxHeight: .infinity)
+        .background(WorkbenchStyle.background)
+        .preferredColorScheme(.dark)
+    }
+}
+
+struct SettingsPageHeader: View {
+    let title: String
+    let subtitle: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(LocalizedStringKey(title)).font(.system(size: 26, weight: .semibold))
+            Text(LocalizedStringKey(subtitle)).font(.system(size: 13)).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 8)
+    }
+}
+
+struct SettingsCard<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(LocalizedStringKey(title)).font(.system(size: 14, weight: .semibold))
+            content()
+        }
+        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        .background(WorkbenchStyle.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WorkbenchStyle.border.opacity(0.7)))
+    }
+}
+
+private struct GeneralSettingsView: View {
     @AppStorage(AppLanguage.preferenceKey) private var language = AppLanguage.current
     @AppStorage(AppTypography.fontSizeKey) private var fontSize = AppTypography.defaultFontSize
 
     var body: some View {
-        TabView {
-            Form {
-                Section {
-                    Picker("语言", selection: $language) {
-                        ForEach(AppLanguage.allCases) { language in
-                            Text(verbatim: language.name).tag(language)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                SettingsPageHeader(title: "通用", subtitle: "调整 MyGit 的语言和阅读体验。")
+                SettingsCard(title: "语言") {
+                    HStack(alignment: .center) {
+                        Text("语言修改将在重启应用后生效。")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                        Spacer(minLength: 16)
+                        Picker("语言", selection: $language) {
+                            ForEach(AppLanguage.allCases) { Text(verbatim: $0.name).tag($0) }
                         }
+                        .labelsHidden().frame(width: 150)
+                        .onChange(of: language) { _, value in value.save() }
                     }
-                    .workbenchHoverFeedback()
-                    .onChange(of: language) { _, value in value.save() }
-                    Text("语言修改将在重启应用后生效。")
-                        .foregroundStyle(.secondary)
                 }
-                Section {
-                    Picker("应用字体大小", selection: $fontSize) {
-                        ForEach(10...18, id: \.self) { size in
-                            Text("\(size) pt").tag(Double(size))
-                        }
-                    }
-                    .workbenchHoverFeedback()
+                SettingsCard(title: "应用字体大小") {
                     Text("调整侧边栏、列表和 diff 的字体大小，立即应用于所有窗口。")
-                        .foregroundStyle(.secondary)
-                }
-                Section("预览") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("工作树与提交记录").appFont(size: 12, weight: .semibold)
-                        Text("Repository · main").appFont(size: 10)
-                            .foregroundStyle(.secondary)
-                        Text("+ let fontSize = 12").appFont(size: 12, design: .monospaced)
-                            .foregroundStyle(.green)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    HStack(spacing: 16) {
+                        Text("10").foregroundStyle(.secondary)
+                        Slider(value: $fontSize, in: AppTypography.fontSizeRange, step: 1)
+                            .accessibilityLabel(Text("应用字体大小"))
+                        Text("18").foregroundStyle(.secondary)
+                        Text(verbatim: "\(Int(fontSize)) pt")
+                            .font(.system(size: 13, weight: .medium, design: .monospaced))
+                            .frame(width: 60, height: 32)
+                            .background(WorkbenchStyle.background, in: RoundedRectangle(cornerRadius: 6))
                     }
-                    .padding(.vertical, 6)
+                    HStack {
+                        Spacer()
+                        Button("恢复默认字号") { fontSize = AppTypography.defaultFontSize }
+                            .disabled(fontSize == AppTypography.defaultFontSize)
+                    }
                 }
-                Button("恢复默认字号") { fontSize = AppTypography.defaultFontSize }
-                    .buttonStyle(WorkbenchButtonStyle())
-                    .disabled(fontSize == AppTypography.defaultFontSize)
+                SettingsCard(title: "预览") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("工作树与提交记录", systemImage: "point.3.connected.trianglepath.dotted")
+                            .appFont(size: 12, weight: .semibold)
+                        Text("Repository · main").appFont(size: 10).foregroundStyle(.secondary)
+                        Divider()
+                        Text("+ let fontSize = 12").appFont(size: 12, design: .monospaced).foregroundStyle(.green)
+                        Text("  // MyGit").appFont(size: 12, design: .monospaced).foregroundStyle(.secondary)
+                    }
+                    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(WorkbenchStyle.background, in: RoundedRectangle(cornerRadius: 8))
+                }
             }
-            .formStyle(.grouped)
-            .tabItem { Label("General", systemImage: "gearshape") }
+            .frame(maxWidth: 820).padding(32).frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .frame(width: 480, height: 460)
-        .preferredColorScheme(.dark)
+        .buttonStyle(WorkbenchButtonStyle())
+    }
+}
+
+// Own the native settings window so changing SwiftUI panes cannot replace its resize bounds.
+@MainActor final class SettingsWindowController: NSWindowController {
+    static let shared = SettingsWindowController()
+
+    private init() {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 760),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                              backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: SettingsView())
+        host.sizingOptions = [.minSize]
+        window.contentView = host
+        window.title = AppLocalization.text("MyGit 设置")
+        window.contentMinSize = NSSize(width: 820, height: 620)
+        window.isReleasedWhenClosed = false
+        if !window.setFrameUsingName("MyGit.Settings") { window.center() }
+        window.setFrameAutosaveName("MyGit.Settings")
+        super.init(window: window)
+    }
+
+    required init?(coder: NSCoder) { return nil }
+
+    func show() {
+        showWindow(nil)
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }

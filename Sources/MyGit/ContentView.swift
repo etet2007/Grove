@@ -169,6 +169,8 @@ struct ContentView: View {
     @Environment(\.openURL) private var openURL
     @FocusState private var focusedCommitScopeID: UUID?
     @State private var nameAction: NameAction?
+    @State private var commitTarget: RepositorySnapshot?
+    @State private var remoteTarget: RemoteOperationTarget?
     @State private var nameInput = ""
     @State private var quickQuery = ""
     @State private var quickSelection = 0
@@ -256,6 +258,12 @@ struct ContentView: View {
             .frame(width: 360)
             .padding()
             .background(WorkbenchStyle.sidebar)
+        }
+        .sheet(item: $remoteTarget) { target in
+            RemoteOperationView(target: target).environmentObject(model)
+        }
+        .sheet(item: $commitTarget) { target in
+            CommitReviewView(target: target).environmentObject(model)
         }
         .alert(model.error == nil ? "工作树已变化" : "无法完成操作",
                isPresented: Binding(get: { model.error != nil || model.notice != nil },
@@ -511,6 +519,13 @@ struct ContentView: View {
         .menuIndicator(.hidden)
         .focusEffectDisabled()
         .contextMenu {
+            if let snapshot {
+                ForEach(RemoteOperation.allCases) { operation in
+                    Button(operation.title + "…") { remoteTarget = RemoteOperationTarget(snapshot: snapshot, operation: operation) }
+                        .disabled(snapshot.selected == nil || model.isOperatingRemote)
+                }
+                Divider()
+            }
             FinderMenuItem(path: snapshot?.selected?.path ?? repository.path)
             Divider()
             if let project = model.selectedProject {
@@ -675,9 +690,9 @@ struct ContentView: View {
                                         ChangedFileRow(file: file, selected: model.selectedFile?.id == file.id)
                                     }
                                     .buttonStyle(WorkbenchHoverButtonStyle())
-                                    .finderContextMenu(path: snapshot.selected.map {
+                                    .fileContextMenu(path: snapshot.selected.map {
                                         URL(fileURLWithPath: $0.path).appendingPathComponent(file.path).path
-                                    })
+                                    }, filePath: file.path)
                                 }
                             }
                             .padding(.leading, 16).padding(.trailing, 6)
@@ -696,7 +711,7 @@ struct ContentView: View {
         let collapsed = collapsedChangeRepositories.contains(repositoryID)
         let hasContent = !snapshot.files.isEmpty || snapshot.error != nil
         let conflicts = snapshot.files.filter { $0.changeKind == .conflict }.count
-        return HStack(spacing: 8) {
+        return HStack(alignment: .top, spacing: 8) {
             Button { toggleRepository() } label: {
                 Image(systemName: collapsed ? "chevron.right" : "chevron.down")
                     .appFont(size: 9, weight: .semibold)
@@ -726,19 +741,33 @@ struct ContentView: View {
                 .appFont(size: 10).foregroundStyle(WorkbenchStyle.muted)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button { toggleRepository() } label: {
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text(snapshot.error != nil ? AppLocalization.text("读取失败") :
-                         snapshot.files.isEmpty ? AppLocalization.text("无修改") :
-                         AppLocalization.text("%ld changes", snapshot.files.count))
-                        .foregroundStyle(snapshot.error != nil ? Color.red : WorkbenchStyle.muted)
-                    if conflicts > 0 {
-                        Text(AppLocalization.text("%ld conflicts", conflicts)).foregroundStyle(.red)
+            VStack(alignment: .trailing, spacing: 3) {
+                Button { toggleRepository() } label: {
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text(snapshot.error != nil ? AppLocalization.text("读取失败") :
+                             snapshot.files.isEmpty ? AppLocalization.text("无修改") :
+                             AppLocalization.text("%ld changes", snapshot.files.count))
+                            .foregroundStyle(snapshot.error != nil ? Color.red : WorkbenchStyle.muted)
+                        if conflicts > 0 {
+                            Text(AppLocalization.text("%ld conflicts", conflicts)).foregroundStyle(.red)
+                        }
                     }
+                    .appFont(size: 10).fixedSize()
                 }
-                .appFont(size: 10).fixedSize()
+                .disabled(!hasContent)
+                HStack(spacing: 4) {
+                    RepositoryRemoteActions(snapshot: snapshot)
+                    Button { commitTarget = snapshot } label: {
+                        Image(systemName: "square.and.pencil")
+                            .appFont(size: 12).frame(width: 28, height: 26)
+                    }
+                    .buttonStyle(WorkbenchHoverButtonStyle())
+                    .help("准备提交…")
+                    .accessibilityLabel("准备提交…")
+                    .disabled(snapshot.files.isEmpty || snapshot.error != nil || conflicts > 0 || snapshot.selected?.branch == nil
+                              || model.isCommitting || model.isSwitchingBranch || model.isDiscarding || model.isOperatingRemote)
+                }
             }
-            .disabled(!hasContent)
         }
         .buttonStyle(WorkbenchHoverButtonStyle())
         .padding(.horizontal, 12).padding(.vertical, 9)
@@ -1147,7 +1176,7 @@ private struct DetailPaneView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12).padding(.top, 12)
                     .help(file.path)
-                    .finderContextMenu(path: filePath(file.path, repositoryID: file.repositoryID))
+                    .fileContextMenu(path: filePath(file.path, repositoryID: file.repositoryID), filePath: file.path)
             }
             ViewThatFits(in: .horizontal) {
                 HStack {

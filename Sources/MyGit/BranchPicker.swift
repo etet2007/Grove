@@ -58,7 +58,7 @@ struct BranchPicker: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(WorkbenchHoverButtonStyle())
-        .disabled(model.isSwitchingBranch || model.isDiscarding)
+        .disabled(model.isSwitchingBranch || model.isDiscarding || model.isCommitting || model.isOperatingRemote)
         .help(AppLocalization.text("切换本地分支"))
         .accessibilityLabel(AppLocalization.text("切换本地分支：%@", worktree.branch ?? AppLocalization.text("分离 HEAD")))
         .contextMenu {

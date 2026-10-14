@@ -69,7 +69,7 @@ struct CommitDetailView: View {
                             }
                             .buttonStyle(WorkbenchHoverButtonStyle())
                             .help(file.path)
-                            .finderContextMenu(path: localPath(file.path))
+                            .fileContextMenu(path: localPath(file.path), filePath: file.path)
                             .id(file.id)
                         }
                     }
@@ -84,7 +84,7 @@ struct CommitDetailView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(selected.path).appFont(size: 12, weight: .semibold)
                             .lineLimit(1).truncationMode(.middle).help(selected.path)
-                            .finderContextMenu(path: localPath(selected.path))
+                            .fileContextMenu(path: localPath(selected.path), filePath: selected.path)
                         Text(fileDescription).appFont(size: 11).foregroundStyle(.secondary)
                             .lineLimit(1).help(fileDescription)
                     }

@@ -7,11 +7,14 @@ import SwiftUI
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unifiedCompact)
-        .commands { WorktreeCommands() }
-
-        Settings {
-            SettingsView()
+        .commands {
+            WorktreeCommands()
+            CommandGroup(replacing: .appSettings) {
+                Button("设置…") { SettingsWindowController.shared.show() }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
         }
+
     }
 }
 

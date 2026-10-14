@@ -43,4 +43,17 @@ extension View {
     func finderContextMenu(path: String?) -> some View {
         contextMenu { FinderMenuItem(path: path) }
     }
+
+    func fileContextMenu(path: String?, filePath: String) -> some View {
+        contextMenu {
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString((filePath as NSString).lastPathComponent, forType: .string)
+            } label: {
+                Label("复制文件名", systemImage: "doc.on.doc")
+            }
+            Divider()
+            FinderMenuItem(path: path)
+        }
+    }
 }

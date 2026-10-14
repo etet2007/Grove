@@ -127,6 +127,7 @@ struct RepositorySnapshot: Identifiable, Equatable {
     let files: [ChangedFile]
     let error: String?
     let mergeRequestURL: URL?
+    var remoteStatus: RemoteBranchStatus? = nil
 }
 
 enum DiffMode: String, CaseIterable, Identifiable {

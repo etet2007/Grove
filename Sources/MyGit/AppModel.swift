@@ -155,6 +155,8 @@ private struct MergeRequestCacheEntry {
     @Published private(set) var isRefreshing = false
     @Published private(set) var isSwitchingBranch = false
     @Published private(set) var isDiscarding = false
+    @Published private(set) var isCommitting = false
+    @Published private(set) var isOperatingRemote = false
     @Published var notice: String?
     @Published var error: String?
     @Published var activeTab = 0 {
@@ -367,9 +369,14 @@ private struct MergeRequestCacheEntry {
     }
 
     func switchBranch(_ branch: String, for repositoryID: UUID, checkoutPath: String) async {
-        guard !isSwitchingBranch, !isDiscarding,
+        guard !isSwitchingBranch, !isDiscarding, !isCommitting, !isOperatingRemote,
               let projectID = selectedProjectID, let groupID = selectedWorktreeGroupID,
               snapshots.contains(where: { $0.repository.id == repositoryID && $0.selected?.path == checkoutPath }) else { return }
+        guard CheckoutOperationLock.acquire(checkoutPath) else {
+            error = AppLocalization.text("此 checkout 正在执行其他操作。")
+            return
+        }
+        defer { CheckoutOperationLock.release(checkoutPath) }
         isSwitchingBranch = true
         refreshTask?.cancel()
         refreshSession?.cancel()
@@ -401,6 +408,40 @@ private struct MergeRequestCacheEntry {
         refresh()
     }
 
+    func executeCommitPlan(_ plan: CommitPlan, snapshot: CommitSnapshot, progress: CommitActivitySink? = nil) async -> CommitExecutionResult {
+        guard !isCommitting, !isDiscarding, !isSwitchingBranch, !isOperatingRemote else {
+            return CommitExecutionResult(failure: AppLocalization.text("此 checkout 正在执行其他操作。"))
+        }
+        isCommitting = true
+        refreshTask?.cancel(); refreshSession?.cancel(); refreshGeneration += 1
+        isRefreshing = false
+        allDetailStates.forEach { $0.clear() }
+        let result = await Task.detached(priority: .userInitiated) { CommitExecutor.execute(plan, snapshot: snapshot, progress: progress) }.value
+        groupCache.removeAll(); historyCache.removeAll(); mergeRequestCache.removeAll()
+        isCommitting = false
+        progress?(CommitActivity(AppLocalization.text("刷新仓库视图")))
+        refresh()
+        return result
+    }
+
+    func executeRemoteOperation(_ request: RemoteRequest, progress: CommitActivitySink? = nil) async -> String? {
+        guard !isOperatingRemote, !isCommitting, !isDiscarding, !isSwitchingBranch else {
+            return AppLocalization.text("此 checkout 正在执行其他操作。")
+        }
+        isOperatingRemote = true
+        refreshTask?.cancel(); refreshSession?.cancel(); refreshGeneration += 1
+        isRefreshing = false
+        allDetailStates.forEach { $0.clear() }
+        let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+            do { try request.execute(progress: progress); return nil }
+            catch { return CommitOutputText.clean(error.localizedDescription) }
+        }.value
+        groupCache.removeAll(); historyCache.removeAll(); mergeRequestCache.removeAll()
+        isOperatingRemote = false
+        refresh()
+        return failure
+    }
+
     func selectFile(_ file: ChangedFile) {
         selectedFile = file
         selectedCommit = nil
@@ -409,7 +450,12 @@ private struct MergeRequestCacheEntry {
     }
 
     func discard(_ request: DiffDiscardRequest) async {
-        guard !isDiscarding, !isSwitchingBranch else { return }
+        guard !isDiscarding, !isSwitchingBranch, !isCommitting, !isOperatingRemote else { return }
+        guard CheckoutOperationLock.acquire(request.checkoutPath) else {
+            error = AppLocalization.text("此 checkout 正在执行其他操作。")
+            return
+        }
+        defer { CheckoutOperationLock.release(request.checkoutPath) }
         isDiscarding = true
         refreshTask?.cancel()
         refreshSession?.cancel()
@@ -475,7 +521,7 @@ private struct MergeRequestCacheEntry {
     }
 
     func refresh(useCachedHistory: Bool = false, changedPaths: Set<String>? = nil) {
-        guard !isSwitchingBranch, !isDiscarding else { return }
+        guard !isSwitchingBranch, !isDiscarding, !isCommitting, !isOperatingRemote else { return }
         let changedPaths = changedPaths.map { Set($0.map { canonicalFilesystemPath($0) }) }
         if changedPaths == nil {
             lastFullRefresh = Date()
@@ -589,12 +635,13 @@ private struct MergeRequestCacheEntry {
                        previous.error == nil {
                         return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: selected,
                                                   isFallback: fallback, files: previous.files,
-                                                  error: scanError, mergeRequestURL: mergeRequestURL)
+                                                  error: scanError, mergeRequestURL: mergeRequestURL, remoteStatus: previous.remoteStatus)
                     }
                     do {
+                        let remoteStatus = try? RemoteBranchStatus.read(in: selected.path, branch: selected.branch)
                         return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: selected,
                                                   isFallback: fallback, files: try GitClient.changedFiles(in: selected.path, repositoryID: repository.id),
-                                                  error: scanError, mergeRequestURL: mergeRequestURL)
+                                                  error: scanError, mergeRequestURL: mergeRequestURL, remoteStatus: remoteStatus)
                     } catch {
                         return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: selected,
                                                   isFallback: fallback, files: [], error: error.localizedDescription,
