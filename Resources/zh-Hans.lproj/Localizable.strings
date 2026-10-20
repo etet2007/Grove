@@ -400,3 +400,18 @@
 "分支已分叉，Pull 仅允许快进。" = "分支已分叉，Pull 仅允许快进。";
 "基于本地远端记录；Fetch 后更新。" = "基于本地远端记录；Fetch 后更新。";
 "%@：本地同步状态尚未读取。" = "%@：本地同步状态尚未读取。";
+
+"阅读预览" = "阅读预览";
+"阅读版本" = "阅读版本";
+"完整文档 · 源码差异见 Diff" = "完整文档 · 源码差异见 Diff";
+"此文件不是 UTF-8 文本" = "此文件不是 UTF-8 文本";
+"Markdown 超过 2 MB，请查看源码 diff" = "Markdown 超过 2 MB，请查看源码 diff";
+"无法读取 Markdown" = "无法读取 Markdown";
+"此版本无普通文件" = "此版本无普通文件";
+
+"缩小 Markdown 字体（⌘−）" = "缩小 Markdown 字体（⌘−）";
+"缩小 Markdown 字体" = "缩小 Markdown 字体";
+"恢复 Markdown 默认字号（⌘0）" = "恢复 Markdown 默认字号（⌘0）";
+"恢复 Markdown 默认字号" = "恢复 Markdown 默认字号";
+"放大 Markdown 字体（⌘+）" = "放大 Markdown 字体（⌘+）";
+"放大 Markdown 字体" = "放大 Markdown 字体";

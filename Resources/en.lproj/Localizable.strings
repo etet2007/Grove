@@ -400,3 +400,18 @@
 "分支已分叉，Pull 仅允许快进。" = "Branches have diverged. Pull allows fast-forward only.";
 "基于本地远端记录；Fetch 后更新。" = "Based on local remote-tracking refs. Updated after Fetch.";
 "%@：本地同步状态尚未读取。" = "%@: Local sync status has not been read.";
+
+"阅读预览" = "Reading Preview";
+"阅读版本" = "Document Version";
+"完整文档 · 源码差异见 Diff" = "Full document · See Diff for source changes";
+"此文件不是 UTF-8 文本" = "This file is not UTF-8 text";
+"Markdown 超过 2 MB，请查看源码 diff" = "Markdown exceeds 2 MB. View the source diff instead.";
+"无法读取 Markdown" = "Unable to read Markdown";
+"此版本无普通文件" = "No regular file in this version";
+
+"缩小 Markdown 字体（⌘−）" = "Decrease Markdown text size (⌘−)";
+"缩小 Markdown 字体" = "Decrease Markdown text size";
+"恢复 Markdown 默认字号（⌘0）" = "Reset Markdown text size (⌘0)";
+"恢复 Markdown 默认字号" = "Reset Markdown text size";
+"放大 Markdown 字体（⌘+）" = "Increase Markdown text size (⌘+)";
+"放大 Markdown 字体" = "Increase Markdown text size";

@@ -161,6 +161,7 @@ private struct WorkbenchTabButton: View {
 enum DetailLayout: String, CaseIterable, Identifiable {
     case split = "并排模式"
     case patch = "统一内联"
+    case preview = "阅读预览"
     var id: String { rawValue }
 }
 
@@ -895,11 +896,13 @@ struct ContentView: View {
     private var detailPane: some View {
         ZStack {
             DetailPaneView(state: model.detailStates[0], tab: 0)
+                .environment(\.markdownReviewIsActive, model.activeTab == 0)
                 .opacity(model.activeTab == 0 ? 1 : 0)
                 .allowsHitTesting(model.activeTab == 0)
                 .accessibilityHidden(model.activeTab != 0)
             ForEach(model.commitScopes) { scope in
                 DetailPaneView(state: scope.detail, tab: 1)
+                    .environment(\.markdownReviewIsActive, model.activeTab == 1 && scope.repositoryID == model.commitRepositoryID)
                     .opacity(model.activeTab == 1 && scope.repositoryID == model.commitRepositoryID ? 1 : 0)
                     .allowsHitTesting(model.activeTab == 1 && scope.repositoryID == model.commitRepositoryID)
                     .accessibilityHidden(model.activeTab != 1 || scope.repositoryID != model.commitRepositoryID)
@@ -1197,11 +1200,19 @@ private struct DetailPaneView: View {
                                  checkoutPath: model.snapshots.first { $0.repository.id == commit.repositoryID }?.selected?.path,
                                  commitHash: commit.hash)
                     .id(commit.id)
-            } else if detailLayout == .split, let preview = state.imagePreview {
+            } else if detailLayout == .preview, let file = state.selectedFile,
+                      MarkdownPreview.supports(file.path),
+                      let checkout = model.snapshots.first(where: { $0.repository.id == file.repositoryID })?.selected?.path {
+                MarkdownReviewView(path: file.path, oldPath: CommitPatch.parse(state.detail, prepareDiff: false).files.first?.oldPath,
+                                   checkout: checkout, mode: state.diffMode, untracked: file.isUntracked,
+                                   revision: "\(state.generation):\(state.detail)", preferOld: file.changeKind == .deleted,
+                                   oldTitle: oldDiffTitle, newTitle: newDiffTitle)
+                    .id(file.id + ":" + state.diffMode.rawValue)
+            } else if detailLayout != .patch, let preview = state.imagePreview {
                 ImageDiffView(preview: preview, oldTitle: oldDiffTitle, newTitle: newDiffTitle)
                     .id(detailScrollIdentity)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if detailLayout == .split && splitDiff.hasChanges && !CommitPatch.parse(state.detail, prepareDiff: false).files.contains(where: { $0.summaryTitle != nil }) {
+            } else if detailLayout != .patch && splitDiff.hasChanges && !CommitPatch.parse(state.detail, prepareDiff: false).files.contains(where: { $0.summaryTitle != nil }) {
                 SplitDiffView(diff: splitDiff, oldTitle: oldDiffTitle, newTitle: newDiffTitle,
                               resetID: detailScrollIdentity,
                               discardTargets: canDiscard ? discardTargets : nil,
@@ -1262,12 +1273,17 @@ private struct DetailPaneView: View {
         }
     }
 
+    private var markdownAvailable: Bool {
+        if let file = state.selectedFile { return MarkdownPreview.supports(file.path) }
+        return state.commitPatch?.files.contains { MarkdownPreview.supports($0.path) } == true
+    }
+
     private var layoutControl: some View {
         HStack(spacing: 2) {
-            ForEach(DetailLayout.allCases) { layout in
+            ForEach(DetailLayout.allCases.filter { $0 != .preview || markdownAvailable }) { layout in
                 WorkbenchTabButton(title: layout.rawValue,
-                                   icon: layout == .split ? "rectangle.split.1x2" : "rectangle.split.2x1",
-                                   selected: detailLayout == layout) {
+                                   icon: layout == .preview ? "book" : layout == .split ? "rectangle.split.1x2" : "rectangle.split.2x1",
+                                   selected: (detailLayout == .preview && !markdownAvailable ? .split : detailLayout) == layout) {
                     detailLayout = layout
                 }
             }
