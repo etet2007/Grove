@@ -15,6 +15,7 @@ struct RemoteConfiguration: Equatable {
     let pushURLs: [String: String]
     let upstreamRemote: String
     let upstreamBranch: String
+    var hasRemoteUpstream: Bool { remotes.contains(upstreamRemote) && !upstreamBranch.isEmpty }
 
     static func read(in path: String) throws -> Self {
         let branch = (try? CommitProcess.gitText(["symbolic-ref", "--quiet", "--short", "HEAD"], in: path)) ?? ""
@@ -41,7 +42,7 @@ struct RemoteRequest {
     let branch: String
     let setUpstream: Bool
 
-    static func quick(checkout: String, configuration: RemoteConfiguration, operation: RemoteOperation) throws -> Self {
+    static func quick(checkout: String, configuration: RemoteConfiguration, operation: RemoteOperation) throws -> Self? {
         let remote: String
         let branch: String
         if operation == .fetch {
@@ -50,15 +51,11 @@ struct RemoteRequest {
                 : configuration.remotes.count == 1 ? configuration.remotes[0] : ""
             branch = ""
         } else {
-            guard configuration.remotes.contains(configuration.upstreamRemote), !configuration.upstreamBranch.isEmpty else {
-                throw CommitFailure.message(AppLocalization.text("当前分支未配置远端 upstream，请从仓库右键菜单选择目标分支。"))
-            }
+            guard configuration.hasRemoteUpstream else { return nil }
             remote = configuration.upstreamRemote
             branch = configuration.upstreamBranch
         }
-        guard !remote.isEmpty else {
-            throw CommitFailure.message(AppLocalization.text("无法确定远端，请从仓库右键菜单选择远端。"))
-        }
+        guard !remote.isEmpty else { return nil }
         return Self(checkout: checkout, configuration: configuration, operation: operation, remote: remote,
                     branch: branch, setUpstream: false)
     }
@@ -130,6 +127,7 @@ struct RemoteOperationTarget: Identifiable {
 struct RepositoryRemoteActions: View {
     @EnvironmentObject private var model: AppModel
     let snapshot: RepositorySnapshot
+    let selectTarget: (RemoteOperation) -> Void
     @StateObject private var activity = CommitActivityLog()
     @State private var running = false
     @State private var result = ""
@@ -167,7 +165,7 @@ struct RepositoryRemoteActions: View {
                 .buttonStyle(WorkbenchHoverButtonStyle())
                 .help(hint(operation))
                 .accessibilityLabel(feedback ? result : operation.title)
-                .disabled(!feedback && (running || model.isOperatingRemote || model.isCommitting || model.isSwitchingBranch || model.isDiscarding
+                .disabled(!feedback && (running || model.isOperatingRemote(in: snapshot) || model.isCommitting || model.isSwitchingBranch || model.isDiscarding
                           || snapshot.selected == nil || (operation != .fetch && snapshot.selected?.branch == nil)))
                 .contextMenu {
                     if lastOperation == operation {
@@ -216,7 +214,7 @@ struct RepositoryRemoteActions: View {
         let progress = activity.begin(operation.title)
         let path = selected.path
         Task {
-            let prepared = await Task.detached { Result { () throws -> RemoteRequest in
+            let prepared = await Task.detached { Result { () throws -> RemoteRequest? in
                 let configuration = try RemoteConfiguration.read(in: path)
                 guard configuration.branch == (selected.branch ?? "") else {
                     throw CommitFailure.message(AppLocalization.text("分支或远端配置已变化，请关闭后重新打开。"))
@@ -224,7 +222,15 @@ struct RepositoryRemoteActions: View {
                 return try RemoteRequest.quick(checkout: path, configuration: configuration, operation: operation)
             } }.value
             switch prepared {
-            case .success(let request): failure = await model.executeRemoteOperation(request, progress: progress)
+            case .success(let request):
+                guard let request else {
+                    // Missing defaults require target selection, not a failed Git operation.
+                    running = false; result = ""; lastOperation = nil; feedbackOperation = nil
+                    activity.finish(operation.title)
+                    selectTarget(operation)
+                    return
+                }
+                failure = await model.executeRemoteOperation(request, progress: progress)
             case .failure(let error): failure = CommitOutputText.clean(error.localizedDescription)
             }
             running = false
@@ -296,8 +302,8 @@ struct RemoteOperationView: View {
                 case .success(let value):
                     configuration = value
                     remote = value.remotes.contains(value.upstreamRemote) ? value.upstreamRemote : (value.remotes.contains("origin") ? "origin" : value.remotes.first ?? "")
-                    branch = value.upstreamBranch.isEmpty ? value.branch : value.upstreamBranch
-                    setUpstream = value.upstreamRemote.isEmpty
+                    branch = value.hasRemoteUpstream ? value.upstreamBranch : value.branch
+                    setUpstream = !value.hasRemoteUpstream
                     if value.remotes.isEmpty { failure = AppLocalization.text("此仓库尚未配置远端。") }
                 case .failure(let error): failure = CommitOutputText.clean(error.localizedDescription)
                 }

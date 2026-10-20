@@ -156,7 +156,20 @@ private struct MergeRequestCacheEntry {
     @Published private(set) var isSwitchingBranch = false
     @Published private(set) var isDiscarding = false
     @Published private(set) var isCommitting = false
-    @Published private(set) var isOperatingRemote = false
+    @Published private var activeRemoteCheckouts: Set<String> = []
+    var isOperatingRemote: Bool { !activeRemoteCheckouts.isEmpty }
+
+    private static func remoteCheckoutKey(_ path: String) -> String {
+        guard let resolved = realpath(path, nil) else { return URL(fileURLWithPath: path).standardizedFileURL.path }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
+    func isOperatingRemote(in snapshot: RepositorySnapshot) -> Bool {
+        guard isOperatingRemote else { return false }
+        let paths = snapshot.worktrees.map(\.path) + [snapshot.selected?.path ?? snapshot.repository.path]
+        return paths.contains { activeRemoteCheckouts.contains(Self.remoteCheckoutKey($0)) }
+    }
     @Published var notice: String?
     @Published var error: String?
     @Published var activeTab = 0 {
@@ -425,10 +438,11 @@ private struct MergeRequestCacheEntry {
     }
 
     func executeRemoteOperation(_ request: RemoteRequest, progress: CommitActivitySink? = nil) async -> String? {
-        guard !isOperatingRemote, !isCommitting, !isDiscarding, !isSwitchingBranch else {
+        let checkoutKey = Self.remoteCheckoutKey(request.checkout)
+        guard !activeRemoteCheckouts.contains(checkoutKey), !isCommitting, !isDiscarding, !isSwitchingBranch else {
             return AppLocalization.text("此 checkout 正在执行其他操作。")
         }
-        isOperatingRemote = true
+        activeRemoteCheckouts.insert(checkoutKey)
         refreshTask?.cancel(); refreshSession?.cancel(); refreshGeneration += 1
         isRefreshing = false
         allDetailStates.forEach { $0.clear() }
@@ -437,7 +451,8 @@ private struct MergeRequestCacheEntry {
             catch { return CommitOutputText.clean(error.localizedDescription) }
         }.value
         groupCache.removeAll(); historyCache.removeAll(); mergeRequestCache.removeAll()
-        isOperatingRemote = false
+        activeRemoteCheckouts.remove(checkoutKey)
+        // Refresh once the remaining remote operations have also finished.
         refresh()
         return failure
     }

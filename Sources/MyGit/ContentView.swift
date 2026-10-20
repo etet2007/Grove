@@ -522,7 +522,7 @@ struct ContentView: View {
             if let snapshot {
                 ForEach(RemoteOperation.allCases) { operation in
                     Button(operation.title + "…") { remoteTarget = RemoteOperationTarget(snapshot: snapshot, operation: operation) }
-                        .disabled(snapshot.selected == nil || model.isOperatingRemote)
+                        .disabled(snapshot.selected == nil || model.isOperatingRemote(in: snapshot))
                 }
                 Divider()
             }
@@ -711,7 +711,7 @@ struct ContentView: View {
         let collapsed = collapsedChangeRepositories.contains(repositoryID)
         let hasContent = !snapshot.files.isEmpty || snapshot.error != nil
         let conflicts = snapshot.files.filter { $0.changeKind == .conflict }.count
-        return HStack(alignment: .top, spacing: 8) {
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
             Button { toggleRepository() } label: {
                 Image(systemName: collapsed ? "chevron.right" : "chevron.down")
                     .appFont(size: 9, weight: .semibold)
@@ -756,7 +756,9 @@ struct ContentView: View {
                 }
                 .disabled(!hasContent)
                 HStack(spacing: 4) {
-                    RepositoryRemoteActions(snapshot: snapshot)
+                    RepositoryRemoteActions(snapshot: snapshot) { operation in
+                        remoteTarget = RemoteOperationTarget(snapshot: snapshot, operation: operation)
+                    }
                     Button { commitTarget = snapshot } label: {
                         Image(systemName: "square.and.pencil")
                             .appFont(size: 12).frame(width: 28, height: 26)

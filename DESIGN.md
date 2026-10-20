@@ -103,9 +103,11 @@
 
 ## 单仓库远端操作（已确认）
 
-- 修改列表仓库标题直接显示纯图标的 Fetch/Pull/Push 和准备提交按钮，悬浮提示操作名称，提交使用 square.and.pencil 图标，点击后使用当前远端 upstream 执行，结果就地显示，点击状态展开 Git 输出。Fetch 回退到 origin 或唯一远端；Pull/Push 缺少远端 upstream 时提示，不猜测目标分支。仓库右键菜单保留高级操作面板，允许选择远端和目标分支并确认。无远端时显示提示；detached HEAD 可 Fetch，Pull/Push 需要有提交的分支。
+- 修改列表仓库标题直接显示纯图标的 Fetch/Pull/Push 和准备提交按钮，悬浮提示操作名称，提交使用 square.and.pencil 图标，点击后使用当前远端 upstream 执行，结果就地显示，点击状态展开 Git 输出。Fetch 回退到 origin 或唯一远端；Pull/Push 缺少远端 upstream 时自动打开目标选择面板，预填当前分支，首次 Push 默认勾选设置 upstream；确认前不执行 Git 写入或联网操作。仓库右键菜单保留高级操作面板，允许选择远端和目标分支并确认。无远端时显示提示；detached HEAD 可 Fetch，Pull/Push 需要有提交的分支。
 - Pull 使用 ff-only，拒绝未提交修改和进行中的 merge/rebase/cherry-pick，不自动 stash 或 rebase。Push 使用显式单分支 refspec，可选设置 upstream；禁止强推，不遵循批量推送、mirror 或跟随标签配置。
 - 按钮旁用图标显示进行中、完成或失败状态，点击状态可展开实时 Git 输出与耗时；高级面板执行时禁止关闭。认证使用已有本机配置，不弹出终端交互。完成后清除缓存并刷新，即使失败也更新可能已 fetch 的本地记录。
 - 执行前核对 HEAD、分支和远端配置；与提交、Discard、分支切换在多个窗口及共享 Git 的 worktree 间互斥。不自动联网。验证只使用临时仓库和本地 bare 远端。
 
 - 远端操作图标读取当前 checkout 的本地 upstream：待推送/拉取用蓝色实心箭头，已知无待同步提交用灰色原箭头，分叉用橙色；缺少配置或本地引用用警告标记。悬浮显示数量、目标和本地记录依据。状态随刷新、Fetch/Pull/Push、提交与分支切换更新，缓存跟随 checkout。Fetch 不自动联网探测，无法预判远端新提交。
+
+- 远端操作允许不同仓库并行，按钮只禁用当前正在操作的仓库。多窗口及 linked worktree 通过共享 Git 数据锁保持互斥；全局忙状态持续到最后一笔远端操作完成，再统一刷新，不因某一笔先完成而提前释放保护。

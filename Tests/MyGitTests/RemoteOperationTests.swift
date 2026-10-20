@@ -28,6 +28,51 @@ final class RemoteOperationTests: XCTestCase {
         RemoteRequest(checkout: repo.path, configuration: try .read(in: repo.path), operation: operation,
                       remote: "origin", branch: branch, setUpstream: upstream)
     }
+    @MainActor
+    func testDifferentRepositoriesPushInParallelAndKeepBusyUntilBothFinish() async throws {
+        let (firstRoot, firstRepo, _) = try fixture()
+        let (secondRoot, secondRepo, _) = try fixture()
+        defer { try? FileManager.default.removeItem(at: firstRoot); try? FileManager.default.removeItem(at: secondRoot) }
+        let model = AppModel(configURL: firstRoot.appendingPathComponent("ui-config.json"))
+        model.automaticRefreshEnabled = false
+        func snapshot(_ path: URL) throws -> RepositorySnapshot {
+            let trees = try GitClient.worktrees(in: path.path)
+            return RepositorySnapshot(repository: Repository(name: "Test", path: path.path, groupID: UUID()),
+                                      worktrees: trees, selected: trees.first, isFallback: false,
+                                      files: [], error: nil, mergeRequestURL: nil)
+        }
+        let firstSnapshot = try snapshot(firstRepo), secondSnapshot = try snapshot(secondRepo)
+        let firstRequest = try request(firstRepo, .push), secondRequest = try request(secondRepo, .push)
+        let gate = ParallelPushGate()
+        let first = Task { await model.executeRemoteOperation(firstRequest, progress: { event in
+            if event.kind == .phase && event.title == "Push" { gate.enter(0) }
+        }) }
+        for _ in 0..<300 where gate.count < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(gate.count, 1)
+        XCTAssertTrue(model.isOperatingRemote)
+        XCTAssertTrue(model.isOperatingRemote(in: firstSnapshot))
+        XCTAssertFalse(model.isOperatingRemote(in: secondSnapshot), "Other repositories' buttons must stay enabled")
+        let duplicate = await model.executeRemoteOperation(firstRequest)
+        XCTAssertNotNil(duplicate, "The same checkout must stay protected")
+        let second = Task { await model.executeRemoteOperation(secondRequest, progress: { event in
+            if event.kind == .phase && event.title == "Push" { gate.enter(1) }
+        }) }
+        for _ in 0..<300 where gate.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(gate.count, 2, "A second repository must start before the first Push finishes")
+        gate.release[0].signal()
+        let firstFailure = await first.value
+        XCTAssertNil(firstFailure)
+        if gate.count == 2 {
+            XCTAssertTrue(model.isOperatingRemote, "The second Push is still running")
+            XCTAssertFalse(model.isOperatingRemote(in: firstSnapshot))
+            XCTAssertTrue(model.isOperatingRemote(in: secondSnapshot))
+        }
+        gate.release[1].signal()
+        let secondFailure = await second.value
+        XCTAssertNil(secondFailure)
+        XCTAssertFalse(model.isOperatingRemote)
+    }
+
     func testFetchDoesNotChangeLocalHeadAndPullFastForwards() throws {
         let (root, local, other) = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
         let before = try CommitProcess.gitText(["rev-parse", "HEAD"], in: local.path)
@@ -88,16 +133,16 @@ final class RemoteOperationTests: XCTestCase {
         _ = try CommitProcess.git(["config", "branch.main.merge", "refs/heads/release/target"], in: local.path)
         let configuration = try RemoteConfiguration.read(in: local.path)
         for operation in [RemoteOperation.pull, .push] {
-            let request = try RemoteRequest.quick(checkout: local.path, configuration: configuration, operation: operation)
+            let request = try XCTUnwrap(RemoteRequest.quick(checkout: local.path, configuration: configuration, operation: operation))
             XCTAssertEqual(request.remote, "origin")
             XCTAssertEqual(request.branch, "release/target")
             XCTAssertFalse(request.setUpstream)
         }
         _ = try CommitProcess.git(["config", "--unset", "branch.main.remote"], in: local.path)
         let noUpstream = try RemoteConfiguration.read(in: local.path)
-        XCTAssertThrowsError(try RemoteRequest.quick(checkout: local.path, configuration: noUpstream, operation: .pull))
-        XCTAssertThrowsError(try RemoteRequest.quick(checkout: local.path, configuration: noUpstream, operation: .push))
-        XCTAssertEqual(try RemoteRequest.quick(checkout: local.path, configuration: noUpstream, operation: .fetch).remote, "origin")
+        XCTAssertNil(try RemoteRequest.quick(checkout: local.path, configuration: noUpstream, operation: .pull))
+        XCTAssertNil(try RemoteRequest.quick(checkout: local.path, configuration: noUpstream, operation: .push))
+        XCTAssertEqual(try XCTUnwrap(RemoteRequest.quick(checkout: local.path, configuration: noUpstream, operation: .fetch)).remote, "origin")
     }
     func testBranchStatusTracksAheadBehindDivergenceAndMissingUpstreamLocally() throws {
         let (root, local, other) = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
@@ -134,5 +179,16 @@ final class RemoteOperationTests: XCTestCase {
         try commit(local, "local")
         XCTAssertThrowsError(try request(local, .push).execute())
         XCTAssertTrue(try CommitProcess.gitText(["ls-remote", "origin", "refs/heads/main"], in: local.path).hasPrefix(remoteHead))
+    }
+}
+
+private final class ParallelPushGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entered = 0
+    let release = [DispatchSemaphore(value: 0), DispatchSemaphore(value: 0)]
+    var count: Int { lock.lock(); defer { lock.unlock() }; return entered }
+    func enter(_ index: Int) {
+        lock.lock(); entered += 1; lock.unlock()
+        _ = release[index].wait(timeout: .now() + 10)
     }
 }
