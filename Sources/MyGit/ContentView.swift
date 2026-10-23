@@ -176,6 +176,7 @@ struct ContentView: View {
     @State private var quickQuery = ""
     @State private var quickSelection = 0
     @State private var showMergeRequestPicker = false
+    @State private var showProjectManagement = false
     @State private var collapsedRepositoryGroups: Set<UUID> = []
     @State private var collapsedChangeRepositories: Set<UUID> = []
     @AppStorage(AppTypography.fontSizeKey) private var fontSize = AppTypography.defaultFontSize
@@ -259,6 +260,9 @@ struct ContentView: View {
             .frame(width: 360)
             .padding()
             .background(WorkbenchStyle.sidebar)
+        }
+        .sheet(isPresented: $showProjectManagement) {
+            ProjectManagementView().environmentObject(model)
         }
         .sheet(item: $remoteTarget) { target in
             RemoteOperationView(target: target).environmentObject(model)
@@ -413,6 +417,7 @@ struct ContentView: View {
             }
             if !model.projects.isEmpty { Divider() }
             Button("新建工程…") { present(.project) }
+            Button("管理工程…") { showProjectManagement = true }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "square.3.layers.3d")

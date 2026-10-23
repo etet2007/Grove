@@ -275,6 +275,21 @@ private struct MergeRequestCacheEntry {
         save(); refresh()
     }
 
+    func renameProject(_ id: UUID, name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let index = projects.firstIndex(where: { $0.id == id }),
+              projects[index].name != name else { return }
+        projects[index].name = name
+        save()
+    }
+
+    func moveProjects(from offsets: IndexSet, to destination: Int) {
+        guard !offsets.isEmpty, offsets.allSatisfy({ projects.indices.contains($0) }),
+              (0...projects.count).contains(destination) else { return }
+        projects.move(fromOffsets: offsets, toOffset: destination)
+        save()
+    }
+
     func addRepositoryGroup(name: String) {
         guard let index = projectIndex else { return }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)

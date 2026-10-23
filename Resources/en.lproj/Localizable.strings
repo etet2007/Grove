@@ -415,3 +415,14 @@
 "恢复 Markdown 默认字号" = "Reset Markdown text size";
 "放大 Markdown 字体（⌘+）" = "Increase Markdown text size (⌘+)";
 "放大 Markdown 字体" = "Increase Markdown text size";
+
+"管理工程…" = "Manage Projects…";
+"管理工程" = "Manage Projects";
+"拖动工程调整顺序，双击名称重命名。修改自动保存。" = "Drag projects to reorder; double-click a name to rename. Changes save automatically.";
+"工程名称不能为空" = "Project name cannot be empty";
+"拖动调整顺序" = "Drag to reorder";
+"工程名称" = "Project name";
+"重命名工程" = "Rename project";
+"上移" = "Move up";
+"下移" = "Move down";
+"完成" = "Done";
