@@ -1391,40 +1391,30 @@ private struct ChangedFileRow: View {
                 .foregroundStyle(color)
                 .frame(width: 22, height: 20)
                 .background(color.opacity(0.18), in: RoundedRectangle(cornerRadius: 4))
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    Text((file.path as NSString).lastPathComponent)
-                        .appFont(size: 13, weight: selected ? .semibold : .medium)
-                        .foregroundStyle(selected ? WorkbenchStyle.accent : Color.primary)
-                        .strikethrough(file.changeKind == .deleted)
-                        .lineLimit(1).truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if file.hasStaged && file.changeKind != .conflict {
-                        Image(systemName: "checkmark.circle.fill")
-                            .appFont(size: 10).foregroundStyle(.secondary)
-                            .help(AppLocalization.text(file.hasUnstaged ? "已暂存，另有未暂存修改" : "已暂存"))
-                    }
-                    Group {
-                        if let stats = file.stats {
-                            if stats.isBinary {
-                                Text(AppLocalization.text("二进制")).foregroundStyle(.secondary)
-                            } else {
-                                HStack(spacing: 5) {
-                                    Text("+\(stats.additions)").foregroundStyle(.green)
-                                    Text("−\(stats.deletions)").foregroundStyle(.red)
-                                }
-                                .help(AppLocalization.text("已暂存和未暂存修改的增删行数合计"))
-                            }
-                        } else { Text("—").foregroundStyle(.secondary).help(AppLocalization.text("暂无行数统计")) }
-                    }
-                    .appFont(size: 10, design: .monospaced)
-                    .fixedSize()
-                }
-                Text((file.path as NSString).deletingLastPathComponent)
-                    .appFont(size: 9).foregroundStyle(WorkbenchStyle.muted)
-                    .lineLimit(1).truncationMode(.middle)
-                    .frame(minHeight: 11, alignment: .leading)
+            pathLabel
+                .appFont(size: 13, weight: selected ? .semibold : .medium)
+                .lineLimit(1).truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if file.hasStaged && file.changeKind != .conflict {
+                Image(systemName: "checkmark.circle.fill")
+                    .appFont(size: 10).foregroundStyle(.secondary)
+                    .help(AppLocalization.text(file.hasUnstaged ? "已暂存，另有未暂存修改" : "已暂存"))
             }
+            Group {
+                if let stats = file.stats {
+                    if stats.isBinary {
+                        Text(AppLocalization.text("二进制")).foregroundStyle(.secondary)
+                    } else {
+                        HStack(spacing: 5) {
+                            Text("+\(stats.additions)").foregroundStyle(.green)
+                            Text("−\(stats.deletions)").foregroundStyle(.red)
+                        }
+                        .help(AppLocalization.text("已暂存和未暂存修改的增删行数合计"))
+                    }
+                } else { Text("—").foregroundStyle(.secondary).help(AppLocalization.text("暂无行数统计")) }
+            }
+            .appFont(size: 10, design: .monospaced)
+            .fixedSize()
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1434,5 +1424,14 @@ private struct ChangedFileRow: View {
         }
         .contentShape(Rectangle())
         .help(AppLocalization.text("%@ · %@", file.changeKind.title, file.path))
+    }
+
+    private var pathLabel: Text {
+        let filename = (file.path as NSString).lastPathComponent
+        let directory = String(file.path.dropLast(filename.count))
+        return Text(directory).foregroundColor(WorkbenchStyle.muted)
+            + Text(filename)
+                .foregroundColor(selected ? WorkbenchStyle.accent : .primary)
+                .strikethrough(file.changeKind == .deleted)
     }
 }
