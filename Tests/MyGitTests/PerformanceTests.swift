@@ -180,7 +180,9 @@ final class PerformanceTests: XCTestCase {
         _ = try GitClient.text(["remote", "add", "origin", "git@gitlab.example:team/first.git"], in: checkout.path)
         try await waitUntil { model.snapshots.first?.mergeRequestURL?.path == "/team/first/-/merge_requests/new" }
         _ = try GitClient.text(["remote", "set-url", "origin", "git@gitlab.example:team/second.git"], in: checkout.path)
-        try await waitUntil { model.snapshots.first?.mergeRequestURL?.path == "/team/second/-/merge_requests/new" }
+        // Snapshots publish before history/ref decorations finish. Settle the active
+        // refresh before testing that background edits do not start another one.
+        try await waitUntil { !model.isRefreshing && model.snapshots.first?.mergeRequestURL?.path == "/team/second/-/merge_requests/new" }
         model.automaticRefreshEnabled = false
         let backgroundCount = model.completedRefreshCount
         try "background edit\n".write(to: checkout.appendingPathComponent("file.txt"), atomically: true, encoding: .utf8)

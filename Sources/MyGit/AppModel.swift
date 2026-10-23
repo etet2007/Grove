@@ -693,7 +693,14 @@ private struct MergeRequestCacheEntry {
                                               head: selected.head, limit: limit)
                     guard let history = cachedHistory[key]
                         ?? (try? GitClient.commits(in: selected.path, repositoryID: snapshot.repository.id, limit: limit, revision: selected.head)) else { return nil }
-                    return (key, history)
+                    // Ref decorations must refresh even when the commit history is cached.
+                    let decorated = (try? GitClient.decoratingBranches(history, in: selected.path))
+                        ?? history.map { commit in
+                            var undecorated = commit
+                            undecorated.branchNames = []
+                            return undecorated
+                        }
+                    return (key, decorated)
                 }
             }
             var commits = histories.compactMap { $0 }.flatMap { $0.1 }

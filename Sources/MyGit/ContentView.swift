@@ -841,7 +841,8 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(minWidth: 280, idealWidth: 340)
+        .frame(minWidth: 280,
+               idealWidth: model.activeTab == 1 ? 700 * AppTypography.scale(for: fontSize) : 340)
         .background(WorkbenchStyle.background)
         .onChange(of: model.commitRepositoryID) { _, _ in
             if model.activeTab == 1 { focusedCommitScopeID = model.currentCommitScope.id }
@@ -852,52 +853,79 @@ struct ContentView: View {
     }
 
     private func commitList(_ scope: CommitBrowserScope) -> some View {
-        List {
-            ForEach(model.commits.filter { scope.repositoryID == nil || $0.repositoryID == scope.repositoryID }) { commit in
-                Button { model.selectCommit(commit) } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(commit.subject).lineLimit(2)
-                                .appFont(size: 12, weight: scope.detail.selectedCommit == commit ? .semibold : .medium)
+        let commits = model.commits.filter { scope.repositoryID == nil || $0.repositoryID == scope.repositoryID }
+        let displayedCommits = scope.repositoryID == nil ? commits : CommitGraph.topologicalOrder(commits)
+        let graph = CommitGraph(commits: scope.repositoryID == nil ? [] : displayedCommits)
+        let graphRows = Dictionary(uniqueKeysWithValues: graph.rows.map { ($0.commit.id, $0) })
+        let scale = AppTypography.scale(for: fontSize)
+        return GeometryReader { geometry in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(displayedCommits) { commit in
+                        Button { model.selectCommit(commit) } label: {
+                            HStack(spacing: 8) {
+                                if let row = graphRows[commit.id] {
+                                    CommitGraphCell(row: row, laneCount: graph.laneCount, scale: scale, tracks: graph.tracks)
+                                        .frame(height: 30 * scale)
+                                }
+                                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                    Text(commit.subject)
+                                        .appFont(size: 12, weight: scope.detail.selectedCommit == commit ? .semibold : .medium)
+                                        .lineLimit(1).truncationMode(.tail)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .help(commit.subject)
+                                    if scope.repositoryID == nil {
+                                        let repositoryName = model.selectedProject?.repositories.first(where: { $0.id == commit.repositoryID })?.name ?? AppLocalization.text("仓库")
+                                        Text(repositoryName)
+                                            .appFont(size: 10).foregroundStyle(WorkbenchStyle.muted)
+                                            .lineLimit(1).truncationMode(.middle)
+                                            .padding(.horizontal, 5).padding(.vertical, 2)
+                                            .frame(width: min(90 * AppTypography.scale(for: fontSize), geometry.size.width * 0.15))
+                                            .background(WorkbenchStyle.surface, in: RoundedRectangle(cornerRadius: 3))
+                                            .help(repositoryName)
+                                    }
+                                    if geometry.size.width >= 480 * AppTypography.scale(for: fontSize) {
+                                        Text(commit.committer)
+                                            .appFont(size: 11)
+                                            .foregroundStyle(WorkbenchStyle.committerColor(commit.committer))
+                                            .lineLimit(1).truncationMode(.tail)
+                                            .frame(width: min(90 * AppTypography.scale(for: fontSize), geometry.size.width * 0.17), alignment: .leading)
+                                            .help(commit.committer)
+                                        Text(commit.formattedDate)
+                                            .appFont(size: 10, design: .monospaced)
+                                            .foregroundStyle(WorkbenchStyle.muted)
+                                            .lineLimit(1).truncationMode(.tail)
+                                            .frame(width: min(125 * AppTypography.scale(for: fontSize), geometry.size.width * 0.25), alignment: .leading)
+                                            .help(commit.formattedDate)
+                                    }
+                                    Text(commit.hash.prefix(7))
+                                        .appFont(size: 10, design: .monospaced)
+                                        .foregroundStyle(WorkbenchStyle.muted)
+                                        .fixedSize()
+                                        .help(commit.hash)
+                                }
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(commit.hash.prefix(7))
-                                .appFont(size: 10, design: .monospaced)
-                                .foregroundStyle(WorkbenchStyle.muted)
-                                .fixedSize()
-                                .help(commit.hash)
+                                .help("\(commit.subject)\n\(commit.committer) · \(commit.formattedDate)\n\(commit.hash)")
+                            }
+                            .contentShape(Rectangle())
                         }
-                        if scope.repositoryID == nil {
-                            Text(model.selectedProject?.repositories.first(where: { $0.id == commit.repositoryID })?.name ?? "仓库")
-                                .appFont(size: 10).foregroundStyle(WorkbenchStyle.muted)
-                        }
-                        HStack(spacing: 6) {
-                            Image(systemName: "person")
-                                .foregroundStyle(WorkbenchStyle.committerColor(commit.committer))
-                            Text(commit.committer).lineLimit(1).help(commit.committer)
-                            Spacer(minLength: 8)
-                            Text(commit.formattedDate).fixedSize()
-                        }
-                        .appFont(size: 11).foregroundStyle(WorkbenchStyle.muted)
+                        .buttonStyle(WorkbenchRowButtonStyle(isSelected: scope.detail.selectedCommit == commit, verticalPadding: scope.repositoryID == nil ? 5 : 0))
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+                    if displayedCommits.isEmpty {
+                        Text(model.isRefreshing ? "正在读取…" : "暂无提交记录")
+                            .foregroundStyle(WorkbenchStyle.muted).padding(.vertical, 12)
+                    }
+                    Button("加载更早提交") { model.loadMoreCommits() }
+                        .buttonStyle(WorkbenchButtonStyle())
+                        .frame(maxWidth: .infinity)
+                        .disabled(model.isRefreshing || !model.snapshots.contains { $0.selected != nil && (scope.repositoryID == nil || $0.repository.id == scope.repositoryID) })
                 }
-                .buttonStyle(WorkbenchRowButtonStyle(isSelected: scope.detail.selectedCommit == commit))
-                .listRowSeparator(.hidden)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
             }
-            if model.commits.filter({ scope.repositoryID == nil || $0.repositoryID == scope.repositoryID }).isEmpty {
-                Text(model.isRefreshing ? "正在读取…" : "暂无提交记录")
-                    .foregroundStyle(WorkbenchStyle.muted).padding(.vertical, 12)
-                    .listRowSeparator(.hidden)
-            }
-            Button("加载更早提交") { model.loadMoreCommits() }
-                .buttonStyle(WorkbenchButtonStyle())
-                .frame(maxWidth: .infinity)
-                .listRowSeparator(.hidden)
-                .disabled(model.isRefreshing || !model.snapshots.contains { $0.selected != nil && (scope.repositoryID == nil || $0.repository.id == scope.repositoryID) })
+            .scrollContentBackground(.hidden)
+            .background(WorkbenchStyle.background)
         }
-        .scrollContentBackground(.hidden)
-        .background(WorkbenchStyle.background)
     }
 
     private var detailPane: some View {

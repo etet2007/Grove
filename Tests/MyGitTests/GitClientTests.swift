@@ -28,6 +28,15 @@ final class GitClientTests: XCTestCase {
         _ = try git(["add", "."])
         _ = try git(["commit", "-m", "merge"])
         let commit = try XCTUnwrap(GitClient.commits(in: root.path, repositoryID: UUID(), limit: 1).first)
+        XCTAssertEqual(commit.parents, try git(["rev-list", "--parents", "-n", "1", "HEAD"])
+            .split(whereSeparator: { $0.isWhitespace }).dropFirst().map(String.init))
+        let history = try GitClient.commits(in: root.path, repositoryID: commit.repositoryID, limit: 20)
+        let positions = Dictionary(uniqueKeysWithValues: history.enumerated().map { ($0.element.hash, $0.offset) })
+        for (index, item) in history.enumerated() {
+            for parent in item.parents {
+                if let parentIndex = positions[parent] { XCTAssertGreaterThan(parentIndex, index) }
+            }
+        }
         let output = try GitClient.show(commit, in: root.path)
         XCTAssertFalse(output.contains("diff --cc"))
         let patch = CommitPatch.parse(output)

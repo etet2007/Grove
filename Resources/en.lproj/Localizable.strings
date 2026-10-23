@@ -426,3 +426,8 @@
 "上移" = "Move up";
 "下移" = "Move down";
 "完成" = "Done";
+
+"历史线 %d" = "History lane %d";
+"这条历史线上没有可用的本地分支标签；分支可能已删除，或分支指向的提交不在当前历史中。" = "No local branch label is available on this lane. The branch may have been deleted, or its tip may be outside the loaded history.";
+"这条历史线上的本地分支引用：%@。颜色用于区分轨道，不表示所有提交只属于这些分支。" = "Local branch references on this lane: %@. Colors distinguish lanes; commits may also belong to other branches.";
+"本地分支：%@" = "Local branches: %@";

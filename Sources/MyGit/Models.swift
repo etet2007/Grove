@@ -107,6 +107,8 @@ struct Commit: Identifiable, Hashable {
     let committer: String
     let date: Date
     let subject: String
+    var parents: [String] = []
+    var branchNames: [String] = []
 
     var formattedDate: String { Self.dateFormatter.string(from: date) }
 

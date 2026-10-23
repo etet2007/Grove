@@ -384,13 +384,30 @@ struct GitClient {
         }
     }
 
+    /// Read refs separately from cached history: branches can move without changing HEAD.
+    static func decoratingBranches(_ commits: [Commit], in checkout: String) throws -> [Commit] {
+        let output = try text(["for-each-ref", "--sort=refname", "--format=%(objectname)%09%(refname)", "refs/heads/"], in: checkout)
+        var names: [String: [String]] = [:]
+        for line in output.split(whereSeparator: \.isNewline) {
+            let fields = line.split(separator: "\t", maxSplits: 1)
+            guard fields.count == 2 else { continue }
+            names[String(fields[0]), default: []].append(String(fields[1].dropFirst("refs/heads/".count)))
+        }
+        return commits.map { commit in
+            var decorated = commit
+            decorated.branchNames = names[commit.hash] ?? []
+            return decorated
+        }
+    }
+
     static func commits(in worktree: String, repositoryID: UUID, limit: Int, revision: String? = nil) throws -> [Commit] {
-        let output = try text(["log", "-n", String(limit), "--pretty=format:%H%x1f%cn%x1f%ct%x1f%s%x1e"] + (revision.map { [$0] } ?? []), in: worktree)
+        let output = try text(["log", "--topo-order", "-n", String(limit), "--pretty=format:%H%x1f%cn%x1f%ct%x1f%s%x1f%P%x1e"] + (revision.map { [$0] } ?? []), in: worktree)
         return output.split(separator: "\u{1e}").compactMap { record in
             let fields = record.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\u{1f}", omittingEmptySubsequences: false)
-            guard fields.count == 4, let epoch = TimeInterval(fields[2]) else { return nil }
+            guard fields.count == 5, let epoch = TimeInterval(fields[2]) else { return nil }
             return Commit(repositoryID: repositoryID, hash: String(fields[0]), committer: String(fields[1]),
-                          date: Date(timeIntervalSince1970: epoch), subject: String(fields[3]))
+                          date: Date(timeIntervalSince1970: epoch), subject: String(fields[3]),
+                          parents: fields[4].split(separator: " ").map(String.init))
         }
     }
 

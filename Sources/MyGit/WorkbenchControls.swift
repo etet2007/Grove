@@ -59,21 +59,23 @@ struct WorkbenchHoverButtonStyle: ButtonStyle {
 
 struct WorkbenchRowButtonStyle: ButtonStyle {
     var isSelected = false
+    var verticalPadding: CGFloat = 5
 
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
-        Row(label: configuration.label, isSelected: isSelected, isPressed: configuration.isPressed)
+        Row(label: configuration.label, isSelected: isSelected, isPressed: configuration.isPressed, verticalPadding: verticalPadding)
     }
 
     private struct Row: View {
         let label: ButtonStyleConfiguration.Label
         let isSelected: Bool
         let isPressed: Bool
+        let verticalPadding: CGFloat
         @Environment(\.isEnabled) private var isEnabled
         @State private var isHovered = false
 
         var body: some View {
             label
-                .padding(.vertical, 5).padding(.horizontal, 6)
+                .padding(.vertical, verticalPadding).padding(.horizontal, 6)
                 .background(isSelected ? WorkbenchStyle.selection
                             : isEnabled && isPressed ? WorkbenchStyle.raised
                             : isEnabled && isHovered ? WorkbenchStyle.surface : Color.clear)
