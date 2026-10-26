@@ -175,6 +175,19 @@ struct CommitSnapshot {
 enum CheckoutOperationLock {
     private static let lock = NSLock()
     private static var paths: Set<String> = []
+    private static var appUpdateReserved = false
+
+    static func beginAppUpdate() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard paths.isEmpty, !appUpdateReserved else { return false }
+        appUpdateReserved = true
+        return true
+    }
+
+    static func endAppUpdate() {
+        lock.lock(); defer { lock.unlock() }
+        appUpdateReserved = false
+    }
     private static func key(_ path: String) -> String {
         // Linked worktrees share remote refs and configuration; serialize their writes too.
         let common = try? CommitProcess.gitText(["rev-parse", "--path-format=absolute", "--git-common-dir"], in: path)
@@ -183,6 +196,7 @@ enum CheckoutOperationLock {
     static func acquire(_ path: String) -> Bool {
         let key = key(path)
         lock.lock(); defer { lock.unlock() }
+        guard !appUpdateReserved else { return false }
         return paths.insert(key).inserted
     }
     static func release(_ path: String) {

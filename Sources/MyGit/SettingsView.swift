@@ -30,10 +30,10 @@ extension View {
 }
 
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, commit
+    case general, commit, updates
     var id: String { rawValue }
-    var title: String { self == .general ? "通用" : "提交" }
-    var icon: String { self == .general ? "slider.horizontal.3" : "checkmark.circle" }
+    var title: String { switch self { case .general: "通用"; case .commit: "提交"; case .updates: "应用更新" } }
+    var icon: String { switch self { case .general: "slider.horizontal.3"; case .commit: "checkmark.circle"; case .updates: "arrow.down.circle" } }
 }
 
 struct SettingsView: View {
@@ -77,6 +77,7 @@ struct SettingsView: View {
                 switch selection {
                 case .general: GeneralSettingsView()
                 case .commit: CommitSettingsView()
+                case .updates: UpdateSettingsView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

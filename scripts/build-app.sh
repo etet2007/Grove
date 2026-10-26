@@ -15,6 +15,13 @@ mkdir -p dist/MyGit.app/Contents/MacOS
 mkdir -p dist/MyGit.app/Contents/Resources
 cp .build/release/MyGit dist/MyGit.app/Contents/MacOS/MyGit
 cp Resources/Info.plist dist/MyGit.app/Contents/Info.plist
+if [[ -n "${MYGIT_VERSION:-}" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MYGIT_VERSION" dist/MyGit.app/Contents/Info.plist
+fi
+if [[ -n "${MYGIT_BUILD:-}" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $MYGIT_BUILD" dist/MyGit.app/Contents/Info.plist
+fi
+cp scripts/install-update.sh dist/MyGit.app/Contents/Resources/install-update.sh
 cp Resources/MyGitIcon.icns dist/MyGit.app/Contents/Resources/MyGitIcon.icns
 cp -R Resources/en.lproj Resources/zh-Hans.lproj dist/MyGit.app/Contents/Resources/
 codesign --force --sign "$signing_identity" dist/MyGit.app

@@ -33,3 +33,7 @@ MyGit 是原生 macOS Git 客户端，用于在一个工程中查看多个仓库
 代码变更后运行 `swift test`；交付可运行应用时运行 `zsh scripts/build-app.sh`，再用 `codesign --verify dist/MyGit.app` 检查包。若改动界面，尽量实际打开应用检查；若电脑控制权限不可用，要明确说明视觉验收未完成。
 
 MyGit 已初始化为 Git 仓库，当前目录可能是额外 worktree。版本控制操作只针对 MyGit；不要把 `AndroidProjects` 下的用户仓库当作本项目的版本库，也不要为了验证 MyGit 而修改那些仓库。
+
+## 应用更新发布约定
+
+用户希望后续由 Agent 处理 MyGit 的更新发布。收到相关请求时，先读 [docs/releasing.md](docs/releasing.md)，按其中流程核对版本、测试、打包和发布；已确定的信息不要重复询问。正式更新仓库地址、发布分支和本机路径尚未提供，首次确定后记入该文档。不要将本地测试仓库当作正式发布源，也不要默认重写 Git 历史。
