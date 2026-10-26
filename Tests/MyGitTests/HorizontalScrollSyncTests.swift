@@ -4,6 +4,31 @@ import XCTest
 @testable import MyGit
 
 final class HorizontalScrollSyncTests: XCTestCase {
+    @MainActor func testDividerDoesNotKeepResizeCursorForEventsInsidePane() throws {
+        let host = NSHostingView(rootView: SplitDiffView(
+            diff: SplitDiff(rows: [], hasChanges: false),
+            oldTitle: "暂存区", newTitle: "工作区", resetID: "cursor-exit"
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 800, height: 400)
+        host.layoutSubtreeIfNeeded()
+        let split = try XCTUnwrap(descendants(of: host).compactMap { $0 as? NSSplitView }.first)
+        func event(at point: NSPoint) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved,
+                location: split.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+                windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+        }
+        defer { NSCursor.arrow.set() }
+        let dividerEvent = try event(at: NSPoint(x: split.subviews[0].frame.maxX, y: 100))
+        let paneEvent = try event(at: NSPoint(x: 100, y: 100))
+        split.mouseEntered(with: dividerEvent)
+        XCTAssertEqual(NSCursor.current, NSCursor.resizeLeftRight)
+        // Movement can bubble from a pane to the split view after leaving the divider.
+        split.mouseMoved(with: paneEvent)
+        XCTAssertEqual(NSCursor.current, NSCursor.arrow)
+        split.cursorUpdate(with: paneEvent)
+        XCTAssertEqual(NSCursor.current, NSCursor.arrow)
+    }
+
     @MainActor func testDividerTracksHoverAndMovesTrackingAreaAfterResize() throws {
         let host = NSHostingView(rootView: SplitDiffView(
             diff: SplitDiff(rows: [], hasChanges: false),
@@ -26,7 +51,8 @@ final class HorizontalScrollSyncTests: XCTestCase {
         XCTAssertNotEqual(area.rect, resizedArea.rect)
 
         let event = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved,
-            location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+            location: split.convert(NSPoint(x: split.subviews[0].frame.maxX, y: 100), to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: 0,
             context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
         defer { NSCursor.arrow.set() }
         split.cursorUpdate(with: event)

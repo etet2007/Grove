@@ -263,14 +263,14 @@ struct RemoteOperationView: View {
             if loading { ProgressView() }
             if let configuration {
                 Text(AppLocalization.text("当前分支：%@", configuration.branch.isEmpty ? AppLocalization.text("分离 HEAD") : configuration.branch))
-                Picker("远端", selection: $remote) {
-                    ForEach(configuration.remotes, id: \.self) { Text(verbatim: $0).tag($0) }
+                LabeledContent("远端") {
+                    WorkbenchPicker(title: "远端", values: configuration.remotes, selection: $remote) { $0 }
                 }.disabled(executing || finished)
                 Text(verbatim: CommitOutputText.clean((target.operation == .push ? configuration.pushURLs : configuration.fetchURLs)[remote] ?? ""))
                     .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 if target.operation != .fetch {
                     LabeledContent("目标远端分支") {
-                        TextField("目标远端分支", text: $branch).disabled(executing || finished)
+                        WorkbenchTextField(title: "目标远端分支", text: $branch).disabled(executing || finished)
                     }
                     if target.operation == .push {
                         Toggle("设置为 upstream", isOn: $setUpstream).disabled(executing || finished)

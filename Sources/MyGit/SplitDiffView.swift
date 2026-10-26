@@ -6,6 +6,7 @@ struct SplitDiffView: View {
     let newTitle: String
     let resetID: String
     var singleSide: DiffSide? = nil
+    var search: DiffSearch? = nil
     var discardTargets: DiffDiscardTargets? = nil
     var onDiscard: ((Set<Int>, UUID) -> Void)? = nil
     @AppStorage(AppTypography.fontSizeKey) private var fontSize = AppTypography.defaultFontSize
@@ -13,9 +14,9 @@ struct SplitDiffView: View {
 
     var body: some View {
         if let singleSide {
-            column(side: singleSide)
+            column(side: singleSide).task(id: diff.contentID) { search?.prepare(diff) }
         } else {
-            ResizableDiffPanes(old: column(side: .old), new: column(side: .new))
+            ResizableDiffPanes(old: column(side: .old), new: column(side: .new)).task(id: diff.contentID) { search?.prepare(diff) }
         }
     }
 
@@ -52,7 +53,8 @@ struct SplitDiffView: View {
             side: side,
             sync: horizontalSync,
             discardTargets: discardTargets,
-            onDiscard: onDiscard
+            onDiscard: onDiscard,
+            search: search
         )
         .frame(width: width)
     }
@@ -120,19 +122,28 @@ private final class DiffPaneSplitView: NSSplitView, NSSplitViewDelegate {
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        NSCursor.resizeLeftRight.set()
+        updateDividerCursor(with: event)
     }
 
     override func mouseEntered(with event: NSEvent) {
-        NSCursor.resizeLeftRight.set()
+        updateDividerCursor(with: event)
     }
 
     override func mouseMoved(with event: NSEvent) {
-        NSCursor.resizeLeftRight.set()
+        updateDividerCursor(with: event)
     }
 
     override func mouseExited(with event: NSEvent) {
         NSCursor.arrow.set()
+    }
+
+    private func updateDividerCursor(with event: NSEvent) {
+        // Pane events can reach this responder too; only the divider owns the resize cursor.
+        if dragRect.contains(convert(event.locationInWindow, from: nil)) {
+            NSCursor.resizeLeftRight.set()
+        } else if NSCursor.current == NSCursor.resizeLeftRight {
+            NSCursor.arrow.set()
+        }
     }
 
     func splitView(_ splitView: NSSplitView, additionalEffectiveRectOfDividerAt dividerIndex: Int) -> NSRect {
@@ -155,6 +166,8 @@ private struct DiffRowsColumn: View {
     let lines: KeyPath<DiffRow, DiffLine?>
     let width: CGFloat
     var fontScale: CGFloat = 1
+    var matchingRows: Set<Int> = []
+    var selectedRow: Int?
     private var rowHeight: CGFloat { 21 * fontScale }
 
     var body: some View {
@@ -178,7 +191,7 @@ private struct DiffRowsColumn: View {
         }
         .font(.system(size: 12 * fontScale, design: .monospaced))
         .frame(width: width, height: rowHeight, alignment: .leading)
-        .background(background(for: value?.kind))
+        .background(matchingRows.contains(rowID) ? Color.yellow.opacity(selectedRow == rowID ? 0.35 : 0.14) : background(for: value?.kind))
     }
 
     private func background(for kind: DiffLineKind?) -> Color {
@@ -235,6 +248,8 @@ final class VirtualizedDiffDocumentView: NSView {
     private let lines: KeyPath<DiffRow, DiffLine?>
     private var rows: [DiffRow] = []
     private var columnWidth: CGFloat = 0
+    private var matchingRows: Set<Int> = []
+    private var selectedRow: Int?
     private var contentID: UUID?
     private var discardTargets: DiffDiscardTargets?
     private var onDiscard: ((Set<Int>, UUID) -> Void)?
@@ -294,6 +309,28 @@ final class VirtualizedDiffDocumentView: NSView {
         updateVisibleRows(force: true)
     }
 
+    func showSearch(matches: Set<Int>, selected: Int?, navigate: Bool, query: String = "") {
+        if matchingRows != matches || selectedRow != selected {
+            matchingRows = matches; selectedRow = selected
+            updateVisibleRows(force: true)
+        }
+        if navigate, let selected, let scrollView = enclosingScrollView,
+           let index = rows.firstIndex(where: { $0.id == selected }) {
+            let y = max(0, min(CGFloat(index) * rowHeight - scrollView.contentView.bounds.height / 2,
+                               frame.height - scrollView.contentView.bounds.height))
+            var x = scrollView.contentView.bounds.origin.x
+            if !query.isEmpty, let text = rows[index][keyPath: lines]?.text,
+               let range = text.range(of: query, options: [.caseInsensitive], locale: .current) {
+                let font = NSFont.monospacedSystemFont(ofSize: 12 * fontScale, weight: .regular)
+                let prefixWidth = (String(text[..<range.lowerBound]) as NSString).size(withAttributes: [.font: font]).width
+                x = min(max(0, prefixWidth + 60 * fontScale - 24), max(0, frame.width - scrollView.contentView.bounds.width))
+            }
+            scrollView.contentView.scroll(to: NSPoint(x: x, y: y))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            updateVisibleRows()
+        }
+    }
+
     override func layout() {
         super.layout()
         updateVisibleRows()
@@ -307,7 +344,7 @@ final class VirtualizedDiffDocumentView: NSView {
         let range = first..<last
         guard force || range != renderedRowRange else { return }
         renderedRowRange = range
-        host.rootView = DiffRowsColumn(rows: rows[range], lines: lines, width: columnWidth, fontScale: fontScale)
+        host.rootView = DiffRowsColumn(rows: rows[range], lines: lines, width: columnWidth, fontScale: fontScale, matchingRows: matchingRows, selectedRow: selectedRow)
         host.frame = NSRect(x: 0, y: CGFloat(first) * rowHeight,
                             width: columnWidth, height: CGFloat(range.count) * rowHeight)
     }
@@ -361,6 +398,8 @@ private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
     var discardTargets: DiffDiscardTargets? = nil
     var onDiscard: ((Set<Int>, UUID) -> Void)? = nil
 
+    var search: DiffSearch? = nil
+
     func makeCoordinator() -> Coordinator { Coordinator(side: side, sync: sync) }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -382,9 +421,15 @@ private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
         document.setContent(rows: rows, width: contentWidth, fontScale: fontScale, contentID: contentID,
                             discardTargets: discardTargets, onDiscard: onDiscard)
         document.updateVisibleRows()
+        if let search {
+            let navigate = context.coordinator.navigationID != search.navigationID
+            context.coordinator.navigationID = search.navigationID
+            document.showSearch(matches: Set(search.matches), selected: search.targetRow, navigate: navigate, query: search.query)
+        }
     }
 
     final class Coordinator {
+        var navigationID: UUID?
         let side: DiffSide
         let sync: HorizontalScrollSync
         private var observer: NSObjectProtocol?

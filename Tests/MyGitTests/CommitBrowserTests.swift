@@ -37,6 +37,8 @@ final class CommitBrowserTests: XCTestCase {
         XCTAssertEqual(model.commitRepositoryID, app)
         XCTAssertNil(model.focusedRepositoryID)
         XCTAssertEqual(model.visibleCommits.count, 30)
+        XCTAssertEqual(model.lastRefreshCommandCounts["log"], 1, "Initially load only the default repository")
+        XCTAssertTrue(model.commits.allSatisfy { $0.repositoryID == app })
         XCTAssertTrue(model.visibleCommits.allSatisfy { $0.repositoryID == app })
 
         let file = try XCTUnwrap(model.snapshots.first?.files.first)
@@ -46,6 +48,7 @@ final class CommitBrowserTests: XCTestCase {
         model.selectCommit(appCommit)
         let appState = model.detailStates[1]
         model.selectBrowsingRepository(library)
+        try await waitForRefresh(model)
         XCTAssertNil(model.selectedCommit)
         let libraryCommit = try XCTUnwrap(model.visibleCommits.first)
         model.selectCommit(libraryCommit)

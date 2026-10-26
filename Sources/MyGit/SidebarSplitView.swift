@@ -15,6 +15,13 @@ struct SidebarSplitView<Sidebar: View, Content: View>: NSViewRepresentable {
         return split
     }
 
+    // This split fills its parent; it has no intrinsic content size. The default
+    // AppKit fitting pass walks every nested hosting view and its constraints on
+    // each window resize, even though the parent has already supplied the size.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NavigationSplitView, context: Context) -> CGSize? {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
     func updateNSView(_ split: NavigationSplitView, context: Context) {
         (split.arrangedSubviews[0] as? NSHostingView<AnyView>)?.rootView = AnyView(sidebar())
         (split.arrangedSubviews[1] as? NSHostingView<AnyView>)?.rootView = AnyView(content())

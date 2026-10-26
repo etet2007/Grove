@@ -62,9 +62,13 @@ Markdown 文件（`.md`、`.markdown`、`.mdown`、`.mkd`）在详情顶部提�
 
 运行 `swift test`。测试使用临时 Git 仓库，不修改已有项目。
 
+窗口缩放性能可在机器空闲时运行 `MYGIT_RESIZE_BENCHMARK=1 swift test --filter WindowResizePerformanceTests`。测试使用临时配置和合成的 1,000 行 diff，自动调整完整窗口尺寸，输出布局与绘制的中位耗时及 P95，以 16.7 ms 检查 60 Hz 帧预算；默认跳过，避免机器负载造成普通测试误报。该测量不等同于真实拖动帧率，仍需手动检查连续拖动、全屏切换及分栏宽度。
+
 图标源文件为 `scripts/generate-icon.swift`。修改后运行 `zsh scripts/generate-icon.sh`，生成 `Resources/MyGitIcon.png` 和用于应用包的 `Resources/MyGitIcon.icns`。
 
 文件详情将纯重命名、二进制、空文件、仅权限变化、子模块提交及符号链接目标显示为摘要；混合 diff 按文件保留文本代码并展示摘要。子模块显示前后提交号，符号链接显示前后目标。文件类型转换或同时含正文修改时保留代码 diff。文件末尾缺少换行时提供中文或英文说明。
+
+搜索、输入与下拉选择统一使用深灰平面控件：筛选栏高度 32 pt、表单输入 36 pt，随应用字号一起缩放。搜索框提供内置清除按钮；下拉以深色列表展开，支持方向键、回车确认和 Esc 取消。视觉规范见 `DESIGN.md` 的「全局控件视觉规范」。
 
 ## Agent 辅助提交
 

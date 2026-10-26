@@ -70,10 +70,7 @@ struct BranchPicker: View {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("本地分支").appFont(size: 12, weight: .semibold)
-                    TextField("搜索本地分支", text: $query)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("搜索本地分支")
-                        .workbenchHoverFeedback()
+                    WorkbenchSearchField(title: "搜索本地分支", text: $query)
                     if toolStashCount > 0 {
                         Toggle(isOn: $showToolStashes) {
                             Text(AppLocalization.text("显示工具临时分支（%ld）", toolStashCount))

@@ -129,10 +129,8 @@ private struct GeneralSettingsView: View {
                         Text("语言修改将在重启应用后生效。")
                             .font(.system(size: 12)).foregroundStyle(.secondary)
                         Spacer(minLength: 16)
-                        Picker("语言", selection: $language) {
-                            ForEach(AppLanguage.allCases) { Text(verbatim: $0.name).tag($0) }
-                        }
-                        .labelsHidden().frame(width: 150)
+                        WorkbenchPicker(title: "语言", values: AppLanguage.allCases, selection: $language) { $0.name }
+                        .frame(width: 150)
                         .onChange(of: language) { _, value in value.save() }
                     }
                 }

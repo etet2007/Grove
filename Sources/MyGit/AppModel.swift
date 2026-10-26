@@ -42,6 +42,7 @@ private struct MergeRequestCacheEntry {
     @Published var selectedCommit: Commit?
     @Published var diffMode: DiffMode = .unstaged
     @Published var detail = ""
+    @Published var readError: String?
     @Published var splitDiff = SplitDiff(rows: [], hasChanges: false)
     @Published var commitPatch: CommitPatch?
     @Published var imagePreview: ImageDiffPreview?
@@ -59,16 +60,25 @@ private struct MergeRequestCacheEntry {
     func clear() {
         cancelRead()
         generation += 1
-        selectedFile = nil; selectedCommit = nil; detail = ""
+        selectedFile = nil; selectedCommit = nil; detail = ""; readError = nil
         commitPatch = nil; imagePreview = nil
         splitDiff = SplitDiff(rows: [], hasChanges: false)
     }
 }
 
-@MainActor final class CommitBrowserScope: Identifiable {
+@MainActor final class CommitBrowserScope: ObservableObject, Identifiable {
     let id = UUID()
     let repositoryID: UUID?
     let detail = DetailState()
+    @Published var query = ""
+    @Published var searchField: HistorySearchField = .title
+    @Published var searchLocalHistory = false
+    @Published var searchResults: [Commit] = []
+    @Published var searchError: String?
+    @Published var isSearching = false
+    @Published var searchLimit = 50
+    var searchGeneration = 0
+    var searchSession: GitReadSession?
 
     init(repositoryID: UUID?) { self.repositoryID = repositoryID }
 }
@@ -78,7 +88,22 @@ private struct MergeRequestCacheEntry {
     @Published var selectedProjectID: UUID?
     @Published var selectedWorktreeGroupID: UUID?
     @Published private(set) var snapshots: [RepositorySnapshot] = []
-    @Published private(set) var commits: [Commit] = []
+    @Published private(set) var commits: [Commit] = [] {
+        didSet {
+            for (id, history) in Dictionary(grouping: commits, by: \.repositoryID) {
+                if preparedHistories[id]?.source != history {
+                    preparedHistories[id] = PreparedCommitHistory(history)
+                }
+            }
+            preparedHistories = preparedHistories.filter { id, _ in commits.contains { $0.repositoryID == id } }
+        }
+    }
+    private(set) var preparedHistories: [UUID: PreparedCommitHistory] = [:]
+    @Published private(set) var historyErrors: [UUID: String] = [:]
+    @Published private(set) var historyExhausted: Set<UUID> = []
+    @Published private(set) var configurationError: String?
+    var canRecoverConfiguration: Bool { ConfigurationStore(url: configURL).canRecover }
+
     private let changesState = DetailState()
     @Published private(set) var commitScopes = [CommitBrowserScope(repositoryID: nil)]
     @Published private(set) var commitRepositoryID: UUID?
@@ -109,6 +134,15 @@ private struct MergeRequestCacheEntry {
         commitRepositoryID = id
         commitScopeInitialized = true
         if let projectID = selectedProjectID { rememberedCommitRepositories[projectID] = .some(id) }
+        if !isRefreshing, needsSelectedHistory { refresh(useCachedHistory: true, changedPaths: []) }
+    }
+
+    private var needsSelectedHistory: Bool {
+        snapshots.contains { snapshot in
+            snapshot.selected != nil && (commitRepositoryID == nil || snapshot.repository.id == commitRepositoryID)
+                && !commits.contains { $0.repositoryID == snapshot.repository.id }
+                && !historyExhausted.contains(snapshot.repository.id) && historyErrors[snapshot.repository.id] == nil
+        }
     }
 
     private func reconcileCommitRepository() {
@@ -133,7 +167,7 @@ private struct MergeRequestCacheEntry {
     }
 
     private func observeDetails() {
-        detailObservers = allDetailStates.map { state in
+        detailObservers = commitScopes.map { scope in scope.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() } } + allDetailStates.map { state in
             state.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         }
     }
@@ -180,6 +214,11 @@ private struct MergeRequestCacheEntry {
             }
         }
     }
+    @Published var listFocusRequest = UUID()
+    @Published var detailFocusRequest = UUID()
+    @Published var nextHunkRequest = UUID()
+    @Published var previousHunkRequest = UUID()
+    @Published var findRequest = UUID()
     @Published var showQuickSwitch = false
     @Published var focusedRepositoryID: UUID?
 
@@ -203,6 +242,8 @@ private struct MergeRequestCacheEntry {
     private func restoreCachedView() {
         changesDetailNeedsRefresh = false
         allDetailStates.forEach { $0.clear() }
+        commitScopes.forEach { $0.searchSession?.cancel(); $0.searchGeneration += 1 }
+        historyErrors = [:]; historyExhausted = []
         commitScopes = [CommitBrowserScope(repositoryID: nil)]
         commitRepositoryID = nil
         commitScopeInitialized = false
@@ -238,11 +279,10 @@ private struct MergeRequestCacheEntry {
     init(configURL: URL? = nil) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         self.configURL = configURL ?? support.appendingPathComponent("MyGit", isDirectory: true).appendingPathComponent("config.json")
-        if let data = try? Data(contentsOf: self.configURL), let config = try? JSONDecoder().decode(Configuration.self, from: data) {
-            projects = config.projects
-            selectedProjectID = projects.first(where: { $0.id == config.selectedProjectID })?.id ?? projects.first?.id
-            selectedWorktreeGroupID = selectedProject?.worktreeGroups.first(where: { $0.id == config.selectedWorktreeGroupID })?.id
-                ?? selectedProject?.worktreeGroups.first?.id
+        do {
+            if let config = try ConfigurationStore(url: self.configURL).load() { applyConfiguration(config) }
+        } catch {
+            configurationError = AppLocalization.text("无法读取工程配置：%@。原文件已保留，恢复前不会覆盖。", error.localizedDescription)
         }
         observeDetails()
         changeMonitor.onChange = { [weak self] paths in self?.repositoryPathsChanged(paths) }
@@ -252,14 +292,69 @@ private struct MergeRequestCacheEntry {
     var selectedProject: Project? { projects.first { $0.id == selectedProjectID } }
     var selectedGroup: WorktreeGroup? { selectedProject?.worktreeGroups.first { $0.id == selectedWorktreeGroupID } }
 
-    private func save() {
+    private func applyConfiguration(_ config: Configuration) {
+        projects = config.projects
+        selectedProjectID = projects.first(where: { $0.id == config.selectedProjectID })?.id ?? projects.first?.id
+        selectedWorktreeGroupID = selectedProject?.worktreeGroups.first(where: { $0.id == config.selectedWorktreeGroupID })?.id
+            ?? selectedProject?.worktreeGroups.first?.id
+    }
+
+    func recoverConfiguration(useBackup: Bool) {
         do {
-            try FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try encoder.encode(Configuration(projects: projects, selectedProjectID: selectedProjectID,
-                                             selectedWorktreeGroupID: selectedWorktreeGroupID)).write(to: configURL, options: .atomic)
+            applyConfiguration(try ConfigurationStore(url: configURL).recover(useBackup: useBackup))
+            configurationError = nil
+            restoreCachedView()
+            refresh()
+        } catch { self.error = error.localizedDescription }
+    }
+
+    private func save() {
+        guard configurationError == nil else { return }
+        do {
+            try ConfigurationStore(url: configURL).save(Configuration(projects: projects, selectedProjectID: selectedProjectID,
+                                                                     selectedWorktreeGroupID: selectedWorktreeGroupID))
         } catch { self.error = AppLocalization.text("无法保存配置：%@", error.localizedDescription) }
+    }
+
+    func searchHistory(_ scope: CommitBrowserScope) async {
+        scope.searchSession?.cancel()
+        scope.searchGeneration += 1
+        let generation = scope.searchGeneration
+        scope.searchError = nil
+        scope.searchResults = []
+        scope.isSearching = false
+        let query = scope.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard scope.searchLocalHistory, !query.isEmpty else { return }
+        scope.isSearching = true
+        do { try await Task.sleep(for: .milliseconds(300)) } catch {
+            if scope.searchGeneration == generation { scope.isSearching = false }
+            return
+        }
+        guard !Task.isCancelled else { return }
+        let selections = snapshots.filter { scope.repositoryID == nil || $0.repository.id == scope.repositoryID }
+        let field = scope.searchField
+        let limit = scope.searchLimit
+        let session = GitReadSession()
+        scope.searchSession = session
+        await withTaskCancellationHandler {
+            let task = Task.detached(priority: .userInitiated) {
+                await GitClient.$readSession.withValue(session) {
+                    await boundedConcurrentMap(selections) { snapshot -> (String, [Commit], String?) in
+                        guard let checkout = snapshot.selected, !checkout.head.isEmpty else { return (snapshot.repository.name, [], nil) }
+                        do {
+                            return (snapshot.repository.name, try GitClient.searchCommits(in: checkout.path, repositoryID: snapshot.repository.id,
+                                    head: checkout.head, field: field, query: query, limit: limit), nil)
+                        } catch { return (snapshot.repository.name, [], error.localizedDescription) }
+                    }
+                }
+            }
+            let results = await task.value
+            guard !Task.isCancelled, scope.searchGeneration == generation else { return }
+            scope.searchResults = results.flatMap { $0.1 }.sorted { $0.date > $1.date }
+            let failures = results.compactMap { name, _, failure in failure.map { name + ": " + $0 } }
+            scope.searchError = failures.isEmpty ? nil : failures.joined(separator: "\n")
+            scope.isSearching = false
+        } onCancel: { session.cancel() }
     }
 
     func addProject(name: String) {
@@ -411,6 +506,8 @@ private struct MergeRequestCacheEntry {
         refreshGeneration += 1
         isRefreshing = false
         allDetailStates.forEach { $0.clear() }
+        commitScopes.forEach { $0.searchSession?.cancel(); $0.searchGeneration += 1 }
+        historyErrors = [:]; historyExhausted = []
         let failure = await Task.detached(priority: .userInitiated) { () -> String? in
             do { try GitClient.switchBranch(branch, in: checkoutPath); return nil }
             catch { return error.localizedDescription }
@@ -444,6 +541,8 @@ private struct MergeRequestCacheEntry {
         refreshTask?.cancel(); refreshSession?.cancel(); refreshGeneration += 1
         isRefreshing = false
         allDetailStates.forEach { $0.clear() }
+        commitScopes.forEach { $0.searchSession?.cancel(); $0.searchGeneration += 1 }
+        historyErrors = [:]; historyExhausted = []
         let result = await Task.detached(priority: .userInitiated) { CommitExecutor.execute(plan, snapshot: snapshot, progress: progress) }.value
         groupCache.removeAll(); historyCache.removeAll(); mergeRequestCache.removeAll()
         isCommitting = false
@@ -461,6 +560,8 @@ private struct MergeRequestCacheEntry {
         refreshTask?.cancel(); refreshSession?.cancel(); refreshGeneration += 1
         isRefreshing = false
         allDetailStates.forEach { $0.clear() }
+        commitScopes.forEach { $0.searchSession?.cancel(); $0.searchGeneration += 1 }
+        historyErrors = [:]; historyExhausted = []
         let failure = await Task.detached(priority: .userInitiated) { () -> String? in
             do { try request.execute(progress: progress); return nil }
             catch { return CommitOutputText.clean(error.localizedDescription) }
@@ -645,11 +746,13 @@ private struct MergeRequestCacheEntry {
         })
         let limits = repositoryCommitLimits
         let cachedHistory = useCachedHistory ? historyCache : [:]
+        let priorityRepository = commitRepositoryID ?? selections.first?.0.id
         let cachedMergeRequests = useCachedHistory ? mergeRequestCache : [:]
         refreshTask = Task.detached(priority: .utility) {
             let snapshots = await GitClient.$readSession.withValue(session) {
                 await boundedConcurrentMap(selections) { selection -> RepositorySnapshot in
                     let (repository, worktrees, selected, fallback, scanError) = selection
+                    let snapshot: RepositorySnapshot = {
                     guard let selected else {
                         return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: nil,
                                                   isFallback: false, files: [], error: scanError ?? AppLocalization.text("没有有效的检出目录"),
@@ -677,22 +780,50 @@ private struct MergeRequestCacheEntry {
                                                   isFallback: fallback, files: [], error: error.localizedDescription,
                                                   mergeRequestURL: mergeRequestURL)
                     }
+                    }()
+                    await MainActor.run {
+                        guard self.refreshGeneration == generation, self.selectedProjectID == projectID else { return }
+                        var updated = self.snapshots.filter { $0.repository.id != repository.id }
+                        updated.append(snapshot)
+                        let order = selections.map { $0.0.id }
+                        updated.sort { (order.firstIndex(of: $0.repository.id) ?? 0) < (order.firstIndex(of: $1.repository.id) ?? 0) }
+                        if self.snapshots != updated { self.snapshots = updated }
+                    }
+                    return snapshot
                 }
             }
             // Publish changes before history finishes so the file list is usable sooner.
-            await MainActor.run {
-                guard self.refreshGeneration == generation, self.selectedProjectID == projectID else { return }
+            let requestedRepositories: Set<UUID> = await MainActor.run {
+                guard self.refreshGeneration == generation, self.selectedProjectID == projectID else { return [] }
                 if self.snapshots != snapshots { self.snapshots = snapshots }
                 self.reconcileCommitRepository()
+                let loaded = Set(self.commits.map(\.repositoryID))
+                return self.commitRepositoryID.map { loaded.union([$0]) } ?? Set(snapshots.map { $0.repository.id })
             }
             let histories = await GitClient.$readSession.withValue(session) {
-                await boundedConcurrentMap(snapshots) { snapshot -> (HistoryCacheKey, [Commit])? in
+                await boundedConcurrentMap(snapshots.filter { requestedRepositories.contains($0.repository.id) }.sorted { ($0.repository.id == priorityRepository ? 0 : 1) < ($1.repository.id == priorityRepository ? 0 : 1) }) { snapshot -> (HistoryCacheKey, [Commit])? in
                     guard let selected = snapshot.selected else { return nil }
                     let limit = limits[snapshot.repository.id] ?? 30
                     let key = HistoryCacheKey(repositoryID: snapshot.repository.id, path: selected.path,
                                               head: selected.head, limit: limit)
-                    guard let history = cachedHistory[key]
-                        ?? (try? GitClient.commits(in: selected.path, repositoryID: snapshot.repository.id, limit: limit, revision: selected.head)) else { return nil }
+                    let history: [Commit]
+                    do {
+                        if selected.head.isEmpty || selected.head.allSatisfy({ $0 == "0" }) { history = [] }
+                        else if let cached = cachedHistory[key] { history = cached }
+                        else if let previous = cachedHistory.filter({ $0.key.repositoryID == key.repositoryID && $0.key.path == key.path && $0.key.head == key.head && $0.key.limit < limit }).max(by: { $0.key.limit < $1.key.limit }) {
+                            history = previous.value + (try GitClient.commits(in: selected.path, repositoryID: snapshot.repository.id,
+                                                    limit: limit - previous.value.count, revision: selected.head, skip: previous.value.count))
+                        } else {
+                            history = try GitClient.commits(in: selected.path, repositoryID: snapshot.repository.id, limit: limit, revision: selected.head)
+                        }
+                    } catch {
+                        let message = error.localizedDescription
+                        await MainActor.run {
+                            guard self.refreshGeneration == generation else { return }
+                            self.historyErrors[snapshot.repository.id] = message
+                        }
+                        return nil
+                    }
                     // Ref decorations must refresh even when the commit history is cached.
                     let decorated = (try? GitClient.decoratingBranches(history, in: selected.path))
                         ?? history.map { commit in
@@ -700,6 +831,14 @@ private struct MergeRequestCacheEntry {
                             undecorated.branchNames = []
                             return undecorated
                         }
+                    await MainActor.run {
+                        guard self.refreshGeneration == generation else { return }
+                        self.historyErrors.removeValue(forKey: snapshot.repository.id)
+                        if decorated.count < limit { self.historyExhausted.insert(snapshot.repository.id) }
+                        else { self.historyExhausted.remove(snapshot.repository.id) }
+                        let updated = (self.commits.filter { $0.repositoryID != snapshot.repository.id } + decorated).sorted { $0.date > $1.date }
+                        if self.commits != updated { self.commits = updated }
+                    }
                     return (key, decorated)
                 }
             }
@@ -733,6 +872,7 @@ private struct MergeRequestCacheEntry {
                         }
                     } else { changes.clear() }
                 }
+                if self.needsSelectedHistory { self.refresh(useCachedHistory: true, changedPaths: []) }
             }
         }
     }
@@ -753,6 +893,7 @@ private struct MergeRequestCacheEntry {
             state.commitPatch = nil
             state.splitDiff = SplitDiff(rows: [], hasChanges: false)
         }
+        state.readError = nil
         let previousDetail = state.detail
         let previousDiff = state.splitDiff
         let session = GitReadSession()
@@ -760,19 +901,22 @@ private struct MergeRequestCacheEntry {
         state.task = Task.detached(priority: .utility) {
             await GitClient.$readSession.withValue(session) {
                 let output: String
+                var failure: String?
                 let preview = file.flatMap { GitClient.imagePreview(for: $0, in: path, mode: mode) }
                 do {
                     if let file { output = try GitClient.diff(for: file, in: path, mode: mode) }
                     else if let commit { output = try GitClient.show(commit, in: path) }
                     else { output = "" }
-                } catch { output = error.localizedDescription }
+                } catch { failure = error.localizedDescription; output = "" }
                 guard !Task.isCancelled, !session.isCancelled else { return }
                 let patch = commit != nil ? CommitPatch.parse(output) : nil
                 let splitDiff = file != nil
                     ? (output == previousDetail ? previousDiff : SplitDiff.parse(output))
                     : SplitDiff(rows: [], hasChanges: false)
+                let readFailure = failure
                 await MainActor.run {
                     guard state.generation == generation else { return }
+                    state.readError = readFailure
                     if state.detail != output {
                         state.detail = output
                         state.splitDiff = splitDiff

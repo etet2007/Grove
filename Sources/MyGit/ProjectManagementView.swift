@@ -95,11 +95,7 @@ struct ProjectManagementView: View {
                     .focused($focusedID, equals: project.id)
                     .onSubmit { _ = finishEditing() }
                     .onExitCommand { cancelEditing() }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .background(WorkbenchStyle.surface, in: RoundedRectangle(cornerRadius: 4))
-                    .overlay(RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(WorkbenchStyle.accent.opacity(0.65)))
+                    .modifier(WorkbenchControlSurface(isFocused: focusedID == project.id))
                     .accessibilityLabel(Text("工程名称"))
             } else {
                 Text(project.name)

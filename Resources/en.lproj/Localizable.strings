@@ -432,6 +432,46 @@
 "这条历史线上的本地分支引用：%@。颜色用于区分轨道，不表示所有提交只属于这些分支。" = "Local branch references on this lane: %@. Colors distinguish lanes; commits may also belong to other branches.";
 "本地分支：%@" = "Local branches: %@";
 
+// Browsing, search and recovery
+"所有修改" = "All changes";
+"重命名或复制" = "Renamed or copied";
+"提交标题" = "Commit title";
+"提交者" = "Committer";
+"提交哈希" = "Commit hash";
+"Git 读取超时：%@。请重试或检查仓库所在磁盘。" = "Git read timed out: %@. Retry or check the repository disk.";
+"请输入至少 4 位十六进制提交哈希。" = "Enter a hexadecimal commit hash with at least 4 characters.";
+"无法读取工程配置：%@。原文件已保留，恢复前不会覆盖。" = "Cannot read project configuration: %@. The original file is preserved and will not be overwritten before recovery.";
+"工程配置无法读取" = "Cannot read project configuration";
+"恢复最近的有效备份" = "Restore last valid backup";
+"保留损坏文件并重新开始" = "Preserve damaged file and start over";
+"筛选文件路径或名称" = "Filter file paths or names";
+"修改类型" = "Change type";
+"清除筛选" = "Clear filters";
+"没有匹配的文件" = "No matching files";
+"重试读取" = "Retry reading";
+"重试查询" = "Retry search";
+"没有匹配的提交" = "No matching commits";
+"加载更多匹配记录" = "Load more matches";
+"输入完整相对文件路径" = "Enter a full relative file path";
+"搜索提交" = "Search commits";
+"搜索字段" = "Search field";
+"查询本地历史（当前 HEAD 可达，不联网）" = "Search local history reachable from HEAD (offline)";
+"每个仓库先显示 50 条匹配，可继续加载。路径按完整相对路径查询。" = "Starts with 50 matches per repository. Load more as needed. Use full relative paths.";
+"仅筛选已加载的记录；更早记录请启用本地历史查询。" = "Filters loaded commits only. Enable local history search for older commits.";
+"查找 / 跳转修改块（⌘F）" = "Find / navigate hunks (⌘F)";
+"读取详情失败" = "Cannot read details";
+"搜索 diff（按匹配行）" = "Search diff (matching rows)";
+"上一个匹配" = "Previous match";
+"下一个匹配" = "Next match";
+"上一个修改块" = "Previous hunk";
+"下一个修改块" = "Next hunk";
+"关闭搜索" = "Close search";
+"在 diff 中查找…" = "Find in diff…";
+"聚焦文件或提交列表" = "Focus file or commit list";
+"聚焦详情" = "Focus details";
+
+"清除搜索" = "Clear search";
+
 "应用更新" = "App Updates";
 "从你指定的 Git 仓库读取已发布的 MyGit。" = "Get published MyGit versions from your Git repository.";
 "更新来源" = "Update Source";

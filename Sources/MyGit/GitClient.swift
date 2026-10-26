@@ -29,6 +29,11 @@ final class GitReadSession: @unchecked Sendable {
     private var commands: [String: Int] = [:]
     private var processes: [ObjectIdentifier: Process] = [:]
     private var cancelled = false
+    private var timedOut = Set<ObjectIdentifier>()
+    private var deadlines: [ObjectIdentifier: DispatchWorkItem] = [:]
+    let timeout: TimeInterval
+
+    init(timeout: TimeInterval = 30) { self.timeout = timeout }
 
     func start(_ process: Process, command: String) throws {
         lock.lock(); defer { lock.unlock() }
@@ -36,11 +41,28 @@ final class GitReadSession: @unchecked Sendable {
         try process.run()
         processes[ObjectIdentifier(process)] = process
         commands[command, default: 0] += 1
+        let id = ObjectIdentifier(process)
+        let deadline = DispatchWorkItem { [weak self, weak process] in
+            guard let self, let process else { return }
+            self.lock.lock()
+            guard self.processes[id] != nil, process.isRunning else { self.lock.unlock(); return }
+            self.timedOut.insert(id)
+            process.terminate()
+            self.lock.unlock()
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak process] in
+                if let process, process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            }
+        }
+        deadlines[id] = deadline
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
     }
 
     func finish(_ process: Process) {
         lock.lock(); defer { lock.unlock() }
-        processes.removeValue(forKey: ObjectIdentifier(process))
+        let id = ObjectIdentifier(process)
+        processes.removeValue(forKey: id)
+        deadlines.removeValue(forKey: id)?.cancel()
+        timedOut.remove(id)
     }
 
     func cancel() {
@@ -48,7 +70,17 @@ final class GitReadSession: @unchecked Sendable {
         cancelled = true
         let running = Array(processes.values)
         lock.unlock()
-        for process in running where process.isRunning { process.terminate() }
+        for process in running where process.isRunning {
+            process.terminate()
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak process] in
+                if let process, process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            }
+        }
+    }
+
+    func didTimeOut(_ process: Process) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return timedOut.contains(ObjectIdentifier(process))
     }
 
     var isCancelled: Bool {
@@ -78,6 +110,7 @@ struct GitClient {
         var environment = ProcessInfo.processInfo.environment
         environment["LC_ALL"] = "C"
         environment["GIT_OPTIONAL_LOCKS"] = "0"
+        environment["GIT_NO_LAZY_FETCH"] = "1"
         process.environment = environment
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -88,8 +121,30 @@ struct GitClient {
         }
         catch { throw GitError.command(error.localizedDescription) }
         defer { readSession?.finish(process) }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let data: Data
+        if let readSession {
+            // A helper can retain Git's pipe after Git exits. Poll so cancellation and
+            // deadlines never wait for that inherited descriptor to reach EOF.
+            let descriptor = pipe.fileHandleForReading.fileDescriptor
+            var output = Data()
+            var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+            while !readSession.isCancelled && !readSession.didTimeOut(process) {
+                var event = pollfd(fd: descriptor, events: Int16(POLLIN | POLLHUP), revents: 0)
+                let ready = poll(&event, 1, 60)
+                if ready > 0 {
+                    let count = read(descriptor, &buffer, buffer.count)
+                    if count > 0 { output.append(contentsOf: buffer.prefix(count)) }
+                    else if count == 0 { break }
+                    else if errno != EINTR { break }
+                } else if ready < 0 && errno != EINTR { break }
+                else if ready == 0 && !process.isRunning { break }
+            }
+            data = output
+        } else { data = pipe.fileHandleForReading.readDataToEndOfFile() }
         process.waitUntilExit()
+        if readSession?.didTimeOut(process) == true {
+            throw GitError.command(AppLocalization.text("Git 读取超时：%@。请重试或检查仓库所在磁盘。", args.first ?? "git"))
+        }
         if readSession?.isCancelled == true { throw CancellationError() }
         try Task.checkCancellation()
         guard process.terminationStatus == 0 else {
@@ -400,15 +455,57 @@ struct GitClient {
         }
     }
 
-    static func commits(in worktree: String, repositoryID: UUID, limit: Int, revision: String? = nil) throws -> [Commit] {
-        let output = try text(["log", "--topo-order", "-n", String(limit), "--pretty=format:%H%x1f%cn%x1f%ct%x1f%s%x1f%P%x1e"] + (revision.map { [$0] } ?? []), in: worktree)
-        return output.split(separator: "\u{1e}").compactMap { record in
+    static func commits(in worktree: String, repositoryID: UUID, limit: Int, revision: String? = nil, skip: Int = 0) throws -> [Commit] {
+        let output = try text(["log", "--topo-order", "-n", String(limit), "--skip=\(skip)", "--pretty=format:%H%x1f%cn%x1f%ct%x1f%s%x1f%P%x1e"] + (revision.map { [$0] } ?? []), in: worktree)
+        return parseCommits(output, repositoryID: repositoryID)
+    }
+
+    private static func parseCommits(_ output: String, repositoryID: UUID) -> [Commit] {
+        output.split(separator: "\u{1e}").compactMap { record in
             let fields = record.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\u{1f}", omittingEmptySubsequences: false)
             guard fields.count == 5, let epoch = TimeInterval(fields[2]) else { return nil }
             return Commit(repositoryID: repositoryID, hash: String(fields[0]), committer: String(fields[1]),
                           date: Date(timeIntervalSince1970: epoch), subject: String(fields[3]),
                           parents: fields[4].split(separator: " ").map(String.init))
         }
+    }
+
+    static func searchCommits(in path: String, repositoryID: UUID, head: String,
+                              field: HistorySearchField, query: String, limit: Int) throws -> [Commit] {
+        guard !query.isEmpty else { return [] }
+        var revision = head
+        var arguments = ["log", "--topo-order", "-n", String(limit), "--fixed-strings", "--regexp-ignore-case",
+                         "--pretty=format:%H%x1f%cn%x1f%ct%x1f%s%x1f%P%x1e"]
+        switch field {
+        case .title: arguments.append("--grep=\(query)")
+        case .author: arguments.append("--committer=\(query)")
+        case .hash:
+            guard query.count >= 4, query.allSatisfy({ $0.isHexDigit && $0.isASCII }) else {
+                throw GitError.command(AppLocalization.text("请输入至少 4 位十六进制提交哈希。"))
+            }
+            revision = try text(["rev-parse", "--verify", query + "^{commit}"], in: path).trimmingCharacters(in: .whitespacesAndNewlines)
+            _ = try run(["merge-base", "--is-ancestor", revision, head], in: path)
+            arguments.append("--no-walk")
+        case .path: break
+        }
+        arguments.append(revision)
+        arguments.append("--")
+        if field == .path { arguments.append(":(literal)" + query) }
+        if field == .title {
+            var matches: [Commit] = []
+            var skip = 0
+            let batchSize = max(100, limit)
+            arguments[3] = String(batchSize)
+            while matches.count < limit {
+                let batch = parseCommits(try text(Array(arguments.dropLast(2)) + ["--skip=\(skip)", revision, "--"], in: path), repositoryID: repositoryID)
+                matches += batch.filter { $0.subject.localizedCaseInsensitiveContains(query) }
+                if batch.count < batchSize { break }
+                skip += batch.count
+                try Task.checkCancellation()
+            }
+            return Array(matches.prefix(limit))
+        }
+        return parseCommits(try text(arguments, in: path), repositoryID: repositoryID)
     }
 
     static func show(_ commit: Commit, in worktree: String) throws -> String {

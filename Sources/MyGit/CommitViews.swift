@@ -34,12 +34,10 @@ struct CommitSettingsView: View {
                     DisclosureGroup("路径与模型") {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
-                                TextField("可执行文件路径", text: $executable)
-                                    .textFieldStyle(.roundedBorder)
+                                WorkbenchTextField(title: "可执行文件路径", text: $executable)
                                 Button("选择…") { if let path = chooseFile() { executable = path } }
                             }
-                            TextField("模型（留空沿用 Agent 默认配置）", text: $agentModel)
-                                .textFieldStyle(.roundedBorder)
+                            WorkbenchTextField(title: "模型（留空沿用 Agent 默认配置）", text: $agentModel)
                         }.padding(.top, 10)
                     }
                     .font(.system(size: 12))
@@ -303,13 +301,11 @@ struct CommitReviewView: View {
                 Text(verbatim: preferences.kind.title + " · " + (preferences.skillPath.isEmpty ? AppLocalization.text("尚未选择 Skill") : URL(fileURLWithPath: preferences.skillPath).deletingLastPathComponent().lastPathComponent))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Picker("范围", selection: $preparation.scope) {
-                    ForEach(CommitScope.allCases) { Text(AppLocalization.text($0.rawValue)).tag($0) }
-                }
+                WorkbenchPicker(title: "范围", values: CommitScope.allCases, selection: $preparation.scope) { AppLocalization.text($0.rawValue) }
                 .frame(width: 180).disabled(frozen)
                 .onChange(of: preparation.scope) { _, _ in preparation.plan = nil; preparation.snapshot = nil }
             }
-            TextField("本次修改的目的，或对拆分方案的反馈（可选）", text: $preparation.intent).disabled(frozen)
+            WorkbenchTextField(title: "本次修改的目的，或对拆分方案的反馈（可选）", text: $preparation.intent).disabled(frozen)
             HStack {
                 Button(preparation.plan == nil ? "生成提交方案" : "重新生成") { preparation.generate() }.disabled(frozen)
                 if preparation.generating { ProgressView().controlSize(.small); Button("取消生成") { preparation.cancel() } }

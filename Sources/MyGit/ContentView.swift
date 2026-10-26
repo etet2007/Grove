@@ -169,10 +169,13 @@ struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.openURL) private var openURL
     @FocusState private var focusedCommitScopeID: UUID?
+    @FocusState private var changesListFocused: Bool
     @State private var nameAction: NameAction?
     @State private var commitTarget: RepositorySnapshot?
     @State private var remoteTarget: RemoteOperationTarget?
     @State private var nameInput = ""
+    @State private var fileQuery = ""
+    @State private var fileFilter: FileChangeFilter = .all
     @State private var quickQuery = ""
     @State private var quickSelection = 0
     @State private var showMergeRequestPicker = false
@@ -197,7 +200,15 @@ struct ContentView: View {
                 .frame(minWidth: 220, idealWidth: initialSidebarWidth, maxWidth: .infinity)
                 .environmentObject(model)
         } content: {
-            if model.selectedProject == nil {
+            if let error = model.configurationError {
+                VStack(spacing: 16) {
+                    ContentUnavailableView(AppLocalization.text("工程配置无法读取"), systemImage: "exclamationmark.triangle", description: Text(error))
+                    if model.canRecoverConfiguration {
+                        Button(AppLocalization.text("恢复最近的有效备份")) { model.recoverConfiguration(useBackup: true) }
+                    }
+                    Button(AppLocalization.text("保留损坏文件并重新开始")) { model.recoverConfiguration(useBackup: false) }
+                }.padding()
+            } else if model.selectedProject == nil {
                 ContentUnavailableView("还没有工程", systemImage: "externaldrive", description: Text("从标题栏创建工程，再添加本地 Git 仓库。"))
             } else {
                 mainArea.environmentObject(model)
@@ -242,6 +253,10 @@ struct ContentView: View {
                 .help("搜索工程、工作树组或仓库 (⌘K)")
                 HStack(spacing: 0) { mergeRequestMenu }
             }
+        }
+        .onChange(of: model.listFocusRequest) { _, _ in
+            if model.activeTab == 0 { changesListFocused = true }
+            else { focusedCommitScopeID = model.currentCommitScope.id }
         }
         .modifier(HideToolbarTitle())
         .toolbarBackground(WorkbenchStyle.sidebar, for: .windowToolbar)
@@ -679,23 +694,51 @@ struct ContentView: View {
         }
     }
 
+    private var filteredFiles: [ChangedFile] {
+        model.snapshots.filter { model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID }
+            .flatMap(\.files).filter { matchesFile($0) }
+    }
+
+    private func matchesFile(_ file: ChangedFile) -> Bool {
+        fileFilter.includes(file) && (fileQuery.isEmpty || file.path.localizedCaseInsensitiveContains(fileQuery))
+    }
+
     private var changesList: some View {
+        VStack(spacing: 0) {
+            HStack {
+                WorkbenchSearchField(title: "筛选文件路径或名称", text: $fileQuery)
+                WorkbenchPicker(title: "修改类型", values: FileChangeFilter.allCases, selection: $fileFilter) {
+                    AppLocalization.text($0.rawValue)
+                }.fixedSize(horizontal: true, vertical: false)
+                if fileFilter != .all {
+                    Button { fileQuery = ""; fileFilter = .all } label: { Image(systemName: "arrow.counterclockwise") }
+                        .buttonStyle(WorkbenchButtonStyle(size: .compact))
+                        .help(AppLocalization.text("清除筛选"))
+                        .accessibilityLabel(AppLocalization.text("清除筛选"))
+                }
+            }.padding(10)
+            Divider()
+        ScrollViewReader { proxy in
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(model.snapshots.filter { model.focusedRepositoryID == nil || $0.repository.id == model.focusedRepositoryID }) { snapshot in
                     repositoryChangeHeader(snapshot)
                     if !collapsedChangeRepositories.contains(snapshot.repository.id) {
                         if let error = snapshot.error {
-                            Text(error).appFont(size: 11).foregroundStyle(.red)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(error).appFont(size: 11).foregroundStyle(.red).textSelection(.enabled)
+                                Button(AppLocalization.text("重试读取")) { model.refresh(useCachedHistory: true, changedPaths: [snapshot.repository.path]) }
+                                    .disabled(model.isRefreshing)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 28).padding(.vertical, 10)
                         } else if !snapshot.files.isEmpty {
                             LazyVStack(spacing: 2) {
-                                ForEach(snapshot.files) { file in
+                                ForEach(snapshot.files.filter { matchesFile($0) }) { file in
                                     Button { model.selectFile(file) } label: {
                                         ChangedFileRow(file: file, selected: model.selectedFile?.id == file.id)
                                     }
                                     .buttonStyle(WorkbenchHoverButtonStyle())
+                                    .id(file.id)
                                     .fileContextMenu(path: snapshot.selected.map {
                                         URL(fileURLWithPath: $0.path).appendingPathComponent(file.path).path
                                     }, filePath: file.path)
@@ -708,8 +751,25 @@ struct ContentView: View {
                 }
             }
         }
+        .focusable().focused($changesListFocused).focusEffectDisabled()
+        .onKeyPress(.downArrow) { moveFile(1); return .handled }
+        .onKeyPress(.upArrow) { moveFile(-1); return .handled }
+        .onChange(of: model.detailStates[0].selectedFile?.id) { _, id in if let id { proxy.scrollTo(id) } }
+        }
+        if filteredFiles.isEmpty && (!fileQuery.isEmpty || fileFilter != .all) {
+            Text(AppLocalization.text("没有匹配的文件")).foregroundStyle(.secondary).padding()
+        }
+        }
         .frame(minWidth: 280, idealWidth: 340)
         .background(WorkbenchStyle.background)
+    }
+
+    private func moveFile(_ delta: Int) {
+        let files = filteredFiles.filter { !collapsedChangeRepositories.contains($0.repositoryID) }
+        guard !files.isEmpty else { return }
+        let current = files.firstIndex { $0.id == model.detailStates[0].selectedFile?.id }
+        let next = current.map { min(max(0, $0 + delta), files.count - 1) } ?? (delta > 0 ? 0 : files.count - 1)
+        model.selectFile(files[next])
     }
 
     private func repositoryChangeHeader(_ snapshot: RepositorySnapshot) -> some View {
@@ -833,7 +893,6 @@ struct ContentView: View {
             ZStack {
                 ForEach(model.commitScopes) { scope in
                     commitList(scope)
-                        .focused($focusedCommitScopeID, equals: scope.id)
                         .disabled(scope.repositoryID != model.commitRepositoryID || model.activeTab != 1)
                         .opacity(scope.repositoryID == model.commitRepositoryID ? 1 : 0)
                         .allowsHitTesting(scope.repositoryID == model.commitRepositoryID)
@@ -854,17 +913,26 @@ struct ContentView: View {
 
     private func commitList(_ scope: CommitBrowserScope) -> some View {
         let commits = model.commits.filter { scope.repositoryID == nil || $0.repositoryID == scope.repositoryID }
-        let displayedCommits = scope.repositoryID == nil ? commits : CommitGraph.topologicalOrder(commits)
-        let graph = CommitGraph(commits: scope.repositoryID == nil ? [] : displayedCommits)
-        let graphRows = Dictionary(uniqueKeysWithValues: graph.rows.map { ($0.commit.id, $0) })
+        let query = scope.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let searching = !query.isEmpty
+        let source = searching && scope.searchLocalHistory ? scope.searchResults : commits
+        let prepared = scope.repositoryID.flatMap { model.preparedHistories[$0] }
+        let displayedCommits = searching ? source.filter { scope.searchLocalHistory || scope.searchField.matches($0, query: query) }
+            : (scope.repositoryID == nil ? commits : prepared?.commits ?? [])
+        let graph = !searching ? prepared?.graph : nil
+        let graphRows = !searching ? prepared?.rows ?? [:] : [:]
         let scale = AppTypography.scale(for: fontSize)
-        return GeometryReader { geometry in
+        return VStack(spacing: 0) {
+            historySearchControls(scope)
+            Divider()
+        GeometryReader { geometry in
+            ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(displayedCommits) { commit in
                         Button { model.selectCommit(commit) } label: {
                             HStack(spacing: 8) {
-                                if let row = graphRows[commit.id] {
+                                if let graph, let row = graphRows[commit.id] {
                                     CommitGraphCell(row: row, laneCount: graph.laneCount, scale: scale, tracks: graph.tracks)
                                         .frame(height: 30 * scale)
                                 }
@@ -910,22 +978,76 @@ struct ContentView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(WorkbenchRowButtonStyle(isSelected: scope.detail.selectedCommit == commit, verticalPadding: scope.repositoryID == nil ? 5 : 0))
+                        .id(commit.id)
                     }
-                    if displayedCommits.isEmpty {
-                        Text(model.isRefreshing ? "正在读取…" : "暂无提交记录")
+                    let failures = model.historyErrors.filter { scope.repositoryID == nil || $0.key == scope.repositoryID }
+                    if searching && scope.searchLocalHistory {
+                        if scope.isSearching { ProgressView().controlSize(.small).padding() }
+                        if let error = scope.searchError {
+                            Text(error).foregroundStyle(.red).textSelection(.enabled).padding(8)
+                            Button(AppLocalization.text("重试查询")) { Task { await model.searchHistory(scope) } }
+                        }
+                    } else if !failures.isEmpty {
+                        ForEach(failures.keys.sorted(by: { $0.uuidString < $1.uuidString }), id: \.self) { id in
+                            Text((model.selectedProject?.repositories.first { $0.id == id }?.name ?? "") + ": " + (failures[id] ?? ""))
+                                .foregroundStyle(.red).textSelection(.enabled).padding(8)
+                        }
+                        Button(AppLocalization.text("重试读取")) { model.refresh(useCachedHistory: true) }.disabled(model.isRefreshing)
+                    }
+                    if displayedCommits.isEmpty && failures.isEmpty && scope.searchError == nil && !scope.isSearching {
+                        Text(AppLocalization.text(model.isRefreshing ? "正在读取…" : searching ? "没有匹配的提交" : "暂无提交记录"))
                             .foregroundStyle(WorkbenchStyle.muted).padding(.vertical, 12)
                     }
-                    Button("加载更早提交") { model.loadMoreCommits() }
-                        .buttonStyle(WorkbenchButtonStyle())
-                        .frame(maxWidth: .infinity)
-                        .disabled(model.isRefreshing || !model.snapshots.contains { $0.selected != nil && (scope.repositoryID == nil || $0.repository.id == scope.repositoryID) })
+                    if searching && scope.searchLocalHistory {
+                        if scope.searchResults.count >= scope.searchLimit {
+                            Button(AppLocalization.text("加载更多匹配记录")) { scope.searchLimit += 50 }.disabled(scope.isSearching)
+                        }
+                    } else if !model.snapshots.filter({ $0.selected != nil && (scope.repositoryID == nil || $0.repository.id == scope.repositoryID) }).allSatisfy({ model.historyExhausted.contains($0.repository.id) }) {
+                        Button("加载更早提交") { model.loadMoreCommits() }
+                            .buttonStyle(WorkbenchButtonStyle())
+                            .frame(maxWidth: .infinity)
+                            .disabled(model.isRefreshing)
+                    }
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
             }
             .scrollContentBackground(.hidden)
             .background(WorkbenchStyle.background)
+            .focusable().focused($focusedCommitScopeID, equals: scope.id).focusEffectDisabled()
+            .onKeyPress(.downArrow) { moveCommit(1, in: displayedCommits, scope: scope); return .handled }
+            .onKeyPress(.upArrow) { moveCommit(-1, in: displayedCommits, scope: scope); return .handled }
+            .onChange(of: scope.detail.selectedCommit?.id) { _, id in if let id { proxy.scrollTo(id) } }
+            }
         }
+        }
+        .task(id: "\(scope.query)|\(scope.searchField.rawValue)|\(scope.searchLocalHistory)|\(scope.searchLimit)|" + model.snapshots.map { ($0.selected?.path ?? "") + ($0.selected?.head ?? "") }.joined(separator: "|")) {
+            await model.searchHistory(scope)
+        }
+    }
+
+    private func historySearchControls(_ scope: CommitBrowserScope) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                WorkbenchSearchField(title: scope.searchField == .path ? "输入完整相对文件路径" : "搜索提交",
+                                     text: Binding(get: { scope.query }, set: { scope.query = $0; scope.searchLimit = 50 }))
+                WorkbenchPicker(title: "搜索字段", values: HistorySearchField.allCases,
+                                selection: Binding(get: { scope.searchField }, set: { scope.searchField = $0; if $0 == .path { scope.searchLocalHistory = true }; scope.searchLimit = 50 })) {
+                    AppLocalization.text($0.rawValue)
+                }.fixedSize(horizontal: true, vertical: false)
+            }
+            Toggle(AppLocalization.text("查询本地历史（当前 HEAD 可达，不联网）"), isOn: Binding(get: { scope.searchLocalHistory }, set: { scope.searchLocalHistory = $0; if !$0 && scope.searchField == .path { scope.searchField = .title }; scope.searchLimit = 50 }))
+                .toggleStyle(.checkbox)
+            Text(AppLocalization.text(scope.searchLocalHistory ? "每个仓库先显示 50 条匹配，可继续加载。路径按完整相对路径查询。" : "仅筛选已加载的记录；更早记录请启用本地历史查询。"))
+                .foregroundStyle(.secondary)
+        }.appFont(size: 10).padding(10)
+    }
+
+    private func moveCommit(_ delta: Int, in commits: [Commit], scope: CommitBrowserScope) {
+        guard !commits.isEmpty else { return }
+        let current = commits.firstIndex { $0.id == scope.detail.selectedCommit?.id }
+        let next = current.map { min(max(0, $0 + delta), commits.count - 1) } ?? (delta > 0 ? 0 : commits.count - 1)
+        model.selectCommit(commits[next])
     }
 
     private var detailPane: some View {
@@ -984,7 +1106,7 @@ struct ContentView: View {
                 Spacer()
                 IconActionButton(systemName: "xmark", hint: "关闭") { model.showQuickSwitch = false }
             }
-            WorkbenchTextField(title: "搜索工程、工作树组或仓库", text: $quickQuery, icon: "magnifyingglass", autofocus: true)
+            WorkbenchSearchField(title: "搜索工程、工作树组或仓库", text: $quickQuery, autofocus: true)
                 .onSubmit { chooseFirstQuickResult() }
                 .onKeyPress(.upArrow) { moveQuickSelection(-1); return .handled }
                 .onKeyPress(.downArrow) { moveQuickSelection(1); return .handled }
@@ -1186,9 +1308,23 @@ private struct DetailPaneView: View {
     @StateObject private var discardTargets = DiffDiscardTargets()
     @State private var pendingDiscard: DiffDiscardRequest?
     @State private var showingDiscardConfirmation = false
+    @StateObject private var diffSearch = DiffSearch()
+    @FocusState private var detailFocused: Bool
+    private var isActive: Bool { model.activeTab == tab && (tab == 0 || state === model.currentCommitScope.detail) }
 
     var body: some View {
         detailPane
+            .focusable().focused($detailFocused).focusEffectDisabled()
+            .onChange(of: model.detailFocusRequest) { _, _ in if isActive { detailFocused = true } }
+            .onChange(of: model.nextHunkRequest) { _, _ in if isActive { diffSearch.moveHunk(1) } }
+            .onChange(of: model.previousHunkRequest) { _, _ in if isActive { diffSearch.moveHunk(-1) } }
+            .onChange(of: model.findRequest) { _, _ in
+                guard model.activeTab == tab, tab == 0 || state === model.currentCommitScope.detail else { return }
+                if state.selectedFile != nil || state.selectedCommit != nil {
+                    if state.imagePreview != nil { detailLayout = .patch } else if detailLayout == .preview { detailLayout = .split }
+                    diffSearch.isPresented = true
+                }
+            }
             .onAppear { discardTargets.prepare(state.splitDiff) }
             .onChange(of: state.splitDiff.contentID) { _, _ in discardTargets.prepare(state.splitDiff) }
             .alert("丢弃所选修改？", isPresented: $showingDiscardConfirmation) {
@@ -1229,11 +1365,29 @@ private struct DetailPaneView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(12)
+            if state.selectedFile != nil || state.selectedCommit != nil {
+                if diffSearch.isPresented { DiffSearchBar(search: diffSearch) }
+                else {
+                    HStack {
+                        Spacer()
+                        Button(AppLocalization.text("查找 / 跳转修改块（⌘F）")) {
+                            if state.imagePreview != nil { detailLayout = .patch } else if detailLayout == .preview { detailLayout = .split }
+                            diffSearch.isPresented = true
+                        }.buttonStyle(WorkbenchHoverButtonStyle()).appFont(size: 10)
+                    }.padding(.horizontal, 12).padding(.bottom, 6)
+                }
+            }
             Divider()
-            if let commit = state.selectedCommit, let patch = state.commitPatch, !patch.files.isEmpty {
+            if let error = state.readError {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label(AppLocalization.text("读取详情失败"), systemImage: "exclamationmark.triangle")
+                    Text(error).textSelection(.enabled).foregroundStyle(.secondary)
+                    Button(AppLocalization.text("重试读取")) { model.loadDetail(tab: tab) }
+                }.padding().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else if let commit = state.selectedCommit, let patch = state.commitPatch, !patch.files.isEmpty {
                 CommitDetailView(patch: patch, layout: detailLayout,
                                  checkoutPath: model.snapshots.first { $0.repository.id == commit.repositoryID }?.selected?.path,
-                                 commitHash: commit.hash)
+                                 commitHash: commit.hash, search: diffSearch)
                     .id(commit.id)
             } else if detailLayout == .preview, let file = state.selectedFile,
                       MarkdownPreview.supports(file.path),
@@ -1249,7 +1403,7 @@ private struct DetailPaneView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if detailLayout != .patch && splitDiff.hasChanges && !CommitPatch.parse(state.detail, prepareDiff: false).files.contains(where: { $0.summaryTitle != nil }) {
                 SplitDiffView(diff: splitDiff, oldTitle: oldDiffTitle, newTitle: newDiffTitle,
-                              resetID: detailScrollIdentity,
+                              resetID: detailScrollIdentity, search: diffSearch,
                               discardTargets: canDiscard ? discardTargets : nil,
                               onDiscard: canDiscard ? prepareDiscard : nil)
                     .id(detailScrollIdentity)
@@ -1331,24 +1485,8 @@ private struct DetailPaneView: View {
     }
 
     private var rawDetail: some View {
-        ScrollViewReader { proxy in
-            ScrollView([.vertical, .horizontal]) {
-                PatchSummaryView(text: state.detail.isEmpty ? AppLocalization.text("选择左侧项目查看详情。") : state.detail)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(16)
-                    .id("diff-content")
-            }
-            .onAppear { proxy.scrollTo("diff-content", anchor: .topLeading) }
-            .onChange(of: detailScrollIdentity) { _, _ in
-                resetDetailScrollOnLoad = true
-                proxy.scrollTo("diff-content", anchor: .topLeading)
-            }
-            .onChange(of: state.detail) { _, _ in
-                guard resetDetailScrollOnLoad, state.detail != AppLocalization.text("正在读取…") else { return }
-                proxy.scrollTo("diff-content", anchor: .topLeading)
-                resetDetailScrollOnLoad = false
-            }
-        }
+        SearchablePatchView(text: state.detail.isEmpty ? AppLocalization.text("选择左侧项目查看详情。") : state.detail, search: diffSearch)
+            .id(detailScrollIdentity)
     }
 
     private var oldDiffTitle: String {

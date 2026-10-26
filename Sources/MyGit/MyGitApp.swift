@@ -91,6 +91,17 @@ private struct WorktreeCommands: Commands {
                 Button("刷新") { model?.refresh() }
                     .keyboardShortcut("r", modifiers: .command)
                     .disabled(model == nil)
+                Button("在 diff 中查找…") { model?.findRequest = UUID() }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .disabled(model == nil)
+                Button("聚焦文件或提交列表") { model?.listFocusRequest = UUID() }
+                    .keyboardShortcut(.leftArrow, modifiers: [.command, .option]).disabled(model == nil)
+                Button("聚焦详情") { model?.detailFocusRequest = UUID() }
+                    .keyboardShortcut(.rightArrow, modifiers: [.command, .option]).disabled(model == nil)
+                Button("上一个修改块") { model?.previousHunkRequest = UUID() }
+                    .keyboardShortcut(.upArrow, modifiers: [.command, .option]).disabled(model == nil)
+                Button("下一个修改块") { model?.nextHunkRequest = UUID() }
+                    .keyboardShortcut(.downArrow, modifiers: [.command, .option]).disabled(model == nil)
                 Divider()
                 ForEach(model?.projects ?? []) { project in
                     Menu(LocalizedStringKey(project.name)) {

@@ -5,6 +5,7 @@ struct CommitDetailView: View {
     let layout: DetailLayout
     let checkoutPath: String?
     var commitHash: String? = nil
+    var search: DiffSearch? = nil
     @State private var selectedIndex = 0
     @State private var showAll = false
     @State private var sources: [Int: [MergeSourceCommit]] = [:]
@@ -115,6 +116,9 @@ struct CommitDetailView: View {
                 }
                 .padding(.horizontal, 6)
             }
+            .focusable().focusEffectDisabled()
+            .onKeyPress(.upArrow) { selectedIndex = max(0, selectedIndex - 1); showAll = false; return .handled }
+            .onKeyPress(.downArrow) { selectedIndex = min(patch.files.count - 1, selectedIndex + 1); showAll = false; return .handled }
             .onChange(of: selectedIndex) { _, value in proxy.scrollTo(value) }
         }
     }
@@ -156,14 +160,17 @@ struct CommitDetailView: View {
                     .id(selected.path)
             } else if layout != .patch && diff.hasChanges && !(showAll ? patch.files.contains { $0.summaryTitle != nil } : selected.summaryTitle != nil) {
                 SplitDiffView(diff: diff, oldTitle: patch.isMerge ? "第一父提交" : "父提交", newTitle: "提交后", resetID: scrollID,
-                              singleSide: showAll ? nil : singleSide)
+                              singleSide: showAll ? nil : singleSide, search: search)
                     .id(scrollID)
             } else {
-                ScrollView([.vertical, .horizontal]) {
-                    PatchSummaryView(text: showAll ? patch.files.map(\.patch).joined(separator: "\n") : selected.patch)
-                        .frame(maxWidth: .infinity, alignment: .topLeading).padding(16)
+                if let search {
+                    SearchablePatchView(text: showAll ? patch.files.map(\.patch).joined(separator: "\n") : selected.patch, search: search).id(scrollID)
+                } else {
+                    ScrollView([.vertical, .horizontal]) {
+                        PatchSummaryView(text: showAll ? patch.files.map(\.patch).joined(separator: "\n") : selected.patch)
+                            .frame(maxWidth: .infinity, alignment: .topLeading).padding(16)
+                    }.id(scrollID)
                 }
-                .id(scrollID)
             }
         }
     }
