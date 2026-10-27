@@ -1,5 +1,12 @@
 import SwiftUI
 
+private struct WorktreeRowFrames: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
 private struct IconActionButton: View {
     let systemName: String
     let hint: String
@@ -182,6 +189,10 @@ struct ContentView: View {
     @State private var showProjectManagement = false
     @State private var collapsedRepositoryGroups: Set<UUID> = []
     @State private var collapsedChangeRepositories: Set<UUID> = []
+    @State private var draggingWorktreeGroup: UUID?
+    @State private var draggingWorktreeProject: UUID?
+    @State private var worktreeDragOffset: CGFloat = 0
+    @State private var worktreeRowFrames: [UUID: CGRect] = [:]
     @AppStorage(AppTypography.fontSizeKey) private var fontSize = AppTypography.defaultFontSize
 
     private var initialSidebarWidth: CGFloat {
@@ -301,6 +312,24 @@ struct ContentView: View {
                             sidebarHeader("工作树组", action: .worktreeGroup)
                             ForEach(project.worktreeGroups) { group in
                                 worktreeRow(group)
+                                    .offset(y: draggingWorktreeGroup == group.id ? worktreeDragOffset : 0)
+                                    .background {
+                                        GeometryReader { geometry in
+                                            Color.clear.preference(key: WorktreeRowFrames.self,
+                                                value: [group.id: geometry.frame(in: .named("worktreeGroups"))])
+                                        }
+                                    }
+                                    .zIndex(draggingWorktreeGroup == group.id ? 1 : 0)
+                                    .highPriorityGesture(DragGesture(minimumDistance: 5, coordinateSpace: .named("worktreeGroups"))
+                                        .onChanged { value in
+                                            draggingWorktreeGroup = group.id
+                                            draggingWorktreeProject = project.id
+                                            worktreeDragOffset = value.translation.height
+                                        }
+                                        .onEnded { value in
+                                            worktreeDragOffset = value.translation.height
+                                            finishWorktreeDrag(group.id, projectID: project.id)
+                                        })
                             }
                             if !project.hiddenBranches.isEmpty {
                                 Menu("恢复隐藏的分支组") {
@@ -312,6 +341,8 @@ struct ContentView: View {
                                 .workbenchHoverFeedback()
                             }
                         }
+                        .coordinateSpace(name: "worktreeGroups")
+                        .onPreferenceChange(WorktreeRowFrames.self) { worktreeRowFrames = $0 }
                         VStack(alignment: .leading, spacing: 6) {
                             sidebarHeader("关联仓库", action: .repositoryGroup)
                             ForEach(project.groups) { group in
@@ -405,8 +436,24 @@ struct ContentView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(WorkbenchHoverButtonStyle())
+        .overlay(RoundedRectangle(cornerRadius: 6)
+            .strokeBorder(draggingWorktreeGroup == group.id ? WorkbenchStyle.accent : .clear))
+        .overlay(alignment: worktreeInsertionBefore(group.id) ? .top : .bottom) {
+            if worktreeDragTarget == group.id && draggingWorktreeGroup != group.id {
+                Capsule().fill(WorkbenchStyle.accent)
+                    .frame(height: 2).padding(.horizontal, 5)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.12), value: worktreeDragTarget)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .contextMenu {
+            Button("上移") { moveWorktreeGroup(group.id, down: false) }
+                .disabled(model.selectedProject?.worktreeGroups.first?.id == group.id)
+            Button("下移") { moveWorktreeGroup(group.id, down: true) }
+                .disabled(model.selectedProject?.worktreeGroups.last?.id == group.id)
+            Divider()
             if let branch = group.branch {
                 CopyBranchNameButton(branch: branch)
                 if !group.isPrimary { Divider() }
@@ -414,6 +461,42 @@ struct ContentView: View {
             if !group.isPrimary {
                 Button("删除工作树组", role: .destructive) { model.removeWorktreeGroup(group.id) }
             }
+        }
+    }
+
+    private func moveWorktreeGroup(_ id: UUID, down: Bool) {
+        guard let groups = model.selectedProject?.worktreeGroups,
+              let index = groups.firstIndex(where: { $0.id == id }) else { return }
+        model.moveWorktreeGroups(from: IndexSet(integer: index), to: down ? index + 2 : index - 1)
+    }
+
+    private var worktreeDragTarget: UUID? {
+        guard let id = draggingWorktreeGroup, let groups = model.selectedProject?.worktreeGroups,
+              let frame = worktreeRowFrames[id] else { return nil }
+        let position = frame.midY + worktreeDragOffset
+        return groups.filter { worktreeRowFrames[$0.id] != nil }.min {
+            abs(worktreeRowFrames[$0.id]!.midY - position) < abs(worktreeRowFrames[$1.id]!.midY - position)
+        }?.id
+    }
+
+    private func worktreeInsertionBefore(_ id: UUID) -> Bool {
+        guard let groups = model.selectedProject?.worktreeGroups,
+              let source = groups.firstIndex(where: { $0.id == draggingWorktreeGroup }),
+              let target = groups.firstIndex(where: { $0.id == id }) else { return false }
+        return target < source
+    }
+
+    private func finishWorktreeDrag(_ id: UUID, projectID: UUID) {
+        defer { draggingWorktreeGroup = nil; draggingWorktreeProject = nil; worktreeDragOffset = 0 }
+        guard draggingWorktreeGroup == id, draggingWorktreeProject == projectID,
+              model.selectedProjectID == projectID, let groups = model.selectedProject?.worktreeGroups,
+              let source = groups.firstIndex(where: { $0.id == id }), let targetID = worktreeDragTarget,
+              let target = groups.firstIndex(where: { $0.id == targetID }) else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            model.moveWorktreeGroups(from: IndexSet(integer: source), to: target > source ? target + 1 : target)
+            draggingWorktreeGroup = nil
+            draggingWorktreeProject = nil
+            worktreeDragOffset = 0
         }
     }
 

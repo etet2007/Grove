@@ -445,6 +445,14 @@ private struct MergeRequestCacheEntry {
         save(); refresh()
     }
 
+    func moveWorktreeGroups(from offsets: IndexSet, to destination: Int) {
+        guard let index = projectIndex, !offsets.isEmpty,
+              offsets.allSatisfy({ projects[index].worktreeGroups.indices.contains($0) }),
+              (0...projects[index].worktreeGroups.count).contains(destination) else { return }
+        projects[index].worktreeGroups.move(fromOffsets: offsets, toOffset: destination)
+        save()
+    }
+
     func removeWorktreeGroup(_ id: UUID) {
         guard let index = projectIndex,
               let group = projects[index].worktreeGroups.first(where: { $0.id == id }), !group.isPrimary else { return }
@@ -701,18 +709,25 @@ private struct MergeRequestCacheEntry {
         }
         // Detached worktrees have no branch. Give each a temporary, selectable group.
         let existingDetached = projects[index].worktreeGroups.filter(\.isTransient)
-        projects[index].worktreeGroups.removeAll { $0.isTransient }
+        var discoveredDetached: [WorktreeGroup] = []
         for scan in scans {
             for worktree in scan.worktrees where worktree.isDetached && !worktree.isPrimary {
                 var group = existingDetached.first(where: { $0.selections[scan.repository.id] == worktree.path })
                     ?? WorktreeGroup(name: AppLocalization.text("Detached HEAD · %@ · %@", scan.repository.name, String(worktree.head.prefix(7))), branch: nil)
                 group.isTransient = true
                 group.selections[scan.repository.id] = worktree.path
-                projects[index].worktreeGroups.append(group)
+                discoveredDetached.append(group)
             }
         }
+        let detachedByID = Dictionary(uniqueKeysWithValues: discoveredDetached.map { ($0.id, $0) })
+        projects[index].worktreeGroups = projects[index].worktreeGroups.compactMap { group in
+            group.isTransient ? detachedByID[group.id] : group
+        }
+        let retainedIDs = Set(projects[index].worktreeGroups.map(\.id))
+        projects[index].worktreeGroups.append(contentsOf: discoveredDetached.filter { !retainedIDs.contains($0.id) })
         if !projects[index].worktreeGroups.contains(where: { $0.id == selectedWorktreeGroupID }) {
-            selectedWorktreeGroupID = projects[index].worktreeGroups.first?.id
+            selectedWorktreeGroupID = projects[index].worktreeGroups.first(where: \.isPrimary)?.id
+                ?? projects[index].worktreeGroups.first?.id
             if !oldGroups.isEmpty { notice = AppLocalization.text("原工作树组已不可用，已切换到主目录。") }
         }
         guard let group = selectedGroup else { isRefreshing = false; return }
