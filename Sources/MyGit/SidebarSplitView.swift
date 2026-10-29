@@ -29,15 +29,18 @@ struct SidebarSplitView<Sidebar: View, Content: View>: NSViewRepresentable {
 }
 
 /// Window resizing allocates extra space to content; divider dragging chooses a new width.
-final class NavigationSplitView: NSSplitView, NSSplitViewDelegate {
+final class NavigationSplitView: NSSplitView {
     var preferredSidebarWidth: CGFloat = 280
     private var applyingLayout = false
+    // NSSplitView forwards sidebar action queries to its delegate. Making the
+    // split its own delegate recurses on toggleSidebar: during menu validation.
+    private let layoutDelegate = LayoutDelegate()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         isVertical = true
         dividerStyle = .thin
-        delegate = self
+        delegate = layoutDelegate
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -55,20 +58,10 @@ final class NavigationSplitView: NSSplitView, NSSplitViewDelegate {
                                           width: max(0, available - width), height: bounds.height)
     }
 
-    func splitView(_ splitView: NSSplitView, resizeSubviewsWithOldSize oldSize: NSSize) {
-        adjustSubviews()
-    }
-
-    func splitViewDidResizeSubviews(_ notification: Notification) {
+    private func didResizeSubviews() {
         guard !applyingLayout, let first = arrangedSubviews.first, first.frame.width > 0 else { return }
         preferredSidebarWidth = first.frame.width
     }
-
-    func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMinimumPosition: CGFloat,
-                   ofSubviewAt dividerIndex: Int) -> CGFloat { min(220, maximumSidebarWidth) }
-
-    func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMaximumPosition: CGFloat,
-                   ofSubviewAt dividerIndex: Int) -> CGFloat { maximumSidebarWidth }
 
     private var dragRect: NSRect {
         NSRect(x: (arrangedSubviews.first?.frame.maxX ?? 0) - 3, y: 0,
@@ -80,5 +73,28 @@ final class NavigationSplitView: NSSplitView, NSSplitViewDelegate {
         addCursorRect(dragRect, cursor: .resizeLeftRight)
     }
 
-    func splitView(_ splitView: NSSplitView, additionalEffectiveRectOfDividerAt dividerIndex: Int) -> NSRect { dragRect }
+    private final class LayoutDelegate: NSObject, NSSplitViewDelegate {
+        func splitView(_ splitView: NSSplitView, resizeSubviewsWithOldSize oldSize: NSSize) {
+            splitView.adjustSubviews()
+        }
+
+        func splitViewDidResizeSubviews(_ notification: Notification) {
+            (notification.object as? NavigationSplitView)?.didResizeSubviews()
+        }
+
+        func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMinimumPosition: CGFloat,
+                       ofSubviewAt dividerIndex: Int) -> CGFloat {
+            guard let split = splitView as? NavigationSplitView else { return proposedMinimumPosition }
+            return min(220, split.maximumSidebarWidth)
+        }
+
+        func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMaximumPosition: CGFloat,
+                       ofSubviewAt dividerIndex: Int) -> CGFloat {
+            (splitView as? NavigationSplitView)?.maximumSidebarWidth ?? proposedMaximumPosition
+        }
+
+        func splitView(_ splitView: NSSplitView, additionalEffectiveRectOfDividerAt dividerIndex: Int) -> NSRect {
+            (splitView as? NavigationSplitView)?.dragRect ?? .zero
+        }
+    }
 }

@@ -28,6 +28,7 @@ MyGit 是原生 macOS Git 客户端，用于在一个工程中查看多个仓库
 - `Package.swift`：Swift Package 可执行程序，目标 macOS 14+。
 - `Sources/MyGit/MyGitApp.swift`：应用入口和顶部「工作树」菜单。
 - `Sources/MyGit/ContentView.swift`：侧边栏、快速切换、修改列表、提交时间线和详情视图。
+- `Sources/MyGit/RetainedPane.swift`：按首次访问创建并保留页面，隐藏时脱离布局树，切回后复用滚动与界面状态。
 - `Sources/MyGit/WorkbenchControls.swift`：全局视觉 token、搜索框、输入框、下拉选择与共享交互样式。
 - `Sources/MyGit/AppModel.swift`：工程配置、工作树组选择、刷新和持久化。
 - `Sources/MyGit/Models.swift`：领域模型及工作树选择规则。

@@ -3,6 +3,34 @@ import XCTest
 
 final class ProjectManagementTests: XCTestCase {
     @MainActor
+    func testRepositoryAndGroupOrderPersistsWithoutChangingMembershipOrSelection() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MyGitRepositoryOrder-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let groups = [RepositoryGroup(name: "App"), RepositoryGroup(name: "CSDK")]
+        let repositories = [Repository(name: "A", path: "/missing/a", groupID: groups[0].id),
+                            Repository(name: "B", path: "/missing/b", groupID: groups[1].id),
+                            Repository(name: "C", path: "/missing/c", groupID: groups[0].id)]
+        let group = WorktreeGroup(name: "主目录", isPrimary: true)
+        let project = Project(name: "Test", groups: groups, repositories: repositories, worktreeGroups: [group])
+        let config = root.appendingPathComponent("config.json")
+        try JSONEncoder().encode(Configuration(projects: [project], selectedProjectID: project.id,
+                                               selectedWorktreeGroupID: group.id)).write(to: config)
+        let model = AppModel(configURL: config)
+        model.automaticRefreshEnabled = false
+        for _ in 0..<300 where model.isRefreshing { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(model.isRefreshing)
+        model.reorderRepositoryGroup(groups[0].id, relativeTo: groups[1].id)
+        model.reorderRepository(repositories[0].id, relativeTo: repositories[2].id)
+        model.reorderRepository(repositories[2].id, relativeTo: repositories[1].id)
+        let saved = try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: config))
+        XCTAssertEqual(saved.projects[0].groups.map(\.id), [groups[1].id, groups[0].id])
+        XCTAssertEqual(saved.projects[0].repositories, [repositories[2], repositories[1], repositories[0]])
+        XCTAssertEqual(saved.selectedProjectID, project.id)
+        XCTAssertEqual(saved.selectedWorktreeGroupID, group.id)
+    }
+
+    @MainActor
     func testWorktreeGroupOrderPersistsAcrossRefreshIncludingDetachedWorktree() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("MyGitGroupOrder-\(UUID())")
         let repo = root.appendingPathComponent("repo")

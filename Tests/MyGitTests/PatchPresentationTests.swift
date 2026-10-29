@@ -2,6 +2,41 @@ import XCTest
 @testable import MyGit
 
 final class PatchPresentationTests: XCTestCase {
+    func testPreparedSummaryKeepsMixedPatchSectionsAndReadableText() throws {
+        let text = "Commit message\ndiff --git a/empty b/empty\nnew file mode 100644\ndiff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new\n\\ No newline at end of file"
+        let result = try XCTUnwrap(PreparedPatchSummary.prepare(text))
+        XCTAssertEqual(result.sections.count, 3)
+        guard case .text(let preamble) = result.sections[0],
+              case .summary(let summary) = result.sections[1],
+              case .text(let patch) = result.sections[2] else {
+            return XCTFail("Expected preamble, summary and text patch")
+        }
+        XCTAssertEqual(preamble, "Commit message")
+        XCTAssertEqual(summary.title, "新增空文件")
+        XCTAssertEqual(summary.path, "empty")
+        XCTAssertTrue(patch.contains("+new"))
+        XCTAssertTrue(patch.contains(AppLocalization.text("文件末尾没有换行符")))
+        let plain = try XCTUnwrap(PreparedPatchSummary.prepare("plain text"))
+        guard case .text(let value) = try XCTUnwrap(plain.sections.first) else { return XCTFail("Expected text") }
+        XCTAssertEqual(value, "plain text")
+    }
+
+    @MainActor func testPreparedFilePresentationPreservesRenameAndSummaryDecisionsAndClearsWithDetail() {
+        let rename = "diff --git a/old.md b/new.md\nsimilarity index 100%\nrename from old.md\nrename to new.md"
+        let metadata = FileDiffPresentation.prepare(rename)
+        XCTAssertEqual(metadata.oldPath, "old.md")
+        XCTAssertTrue(metadata.hasSummary)
+        let text = "diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-before\n+after"
+        XCTAssertFalse(FileDiffPresentation.prepare(text).hasSummary)
+        XCTAssertTrue(FileDiffPresentation.prepare("diff --git a/file b/file\nnew file mode 100644").hasSummary)
+        XCTAssertTrue(FileDiffPresentation.prepare("diff --git a/file b/file\nBinary files a/file and b/file differ").hasSummary)
+        let state = DetailState()
+        state.filePresentation = metadata
+        state.clear()
+        XCTAssertNil(state.filePresentation.oldPath)
+        XCTAssertFalse(state.filePresentation.hasSummary)
+    }
+
     private func file(_ body: String) -> CommitFilePatch {
         CommitPatch.parse("diff --git a/file b/file\n" + body).files[0]
     }

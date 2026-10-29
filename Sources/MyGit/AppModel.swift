@@ -43,6 +43,7 @@ private struct MergeRequestCacheEntry {
     @Published var diffMode: DiffMode = .unstaged
     @Published var detail = ""
     @Published var readError: String?
+    @Published var filePresentation = FileDiffPresentation()
     @Published var splitDiff = SplitDiff(rows: [], hasChanges: false)
     @Published var commitPatch: CommitPatch?
     @Published var imagePreview: ImageDiffPreview?
@@ -62,6 +63,7 @@ private struct MergeRequestCacheEntry {
         generation += 1
         selectedFile = nil; selectedCommit = nil; detail = ""; readError = nil
         commitPatch = nil; imagePreview = nil
+        filePresentation = FileDiffPresentation()
         splitDiff = SplitDiff(rows: [], hasChanges: false)
     }
 }
@@ -414,6 +416,28 @@ private struct MergeRequestCacheEntry {
         save()
     }
 
+    func reorderRepositoryGroup(_ id: UUID, relativeTo targetID: UUID) {
+        guard let index = projectIndex,
+              let source = projects[index].groups.firstIndex(where: { $0.id == id }),
+              let target = projects[index].groups.firstIndex(where: { $0.id == targetID }), source != target else { return }
+        projects[index].groups.move(fromOffsets: IndexSet(integer: source), toOffset: target > source ? target + 1 : target)
+        save()
+    }
+
+    func reorderRepository(_ id: UUID, relativeTo targetID: UUID) {
+        guard let index = projectIndex,
+              let source = projects[index].repositories.first(where: { $0.id == id }),
+              let target = projects[index].repositories.first(where: { $0.id == targetID }),
+              source.groupID == target.groupID, id != targetID else { return }
+        let slots = projects[index].repositories.indices.filter { projects[index].repositories[$0].groupID == source.groupID }
+        var ordered = slots.map { projects[index].repositories[$0] }
+        guard let from = ordered.firstIndex(where: { $0.id == id }),
+              let to = ordered.firstIndex(where: { $0.id == targetID }) else { return }
+        ordered.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        for (slot, repository) in zip(slots, ordered) { projects[index].repositories[slot] = repository }
+        save(); refresh(useCachedHistory: true)
+    }
+
     func removeRepositoryGroup(_ id: UUID) {
         guard let index = projectIndex else { return }
         guard !projects[index].repositories.contains(where: { $0.groupID == id }) else {
@@ -702,9 +726,39 @@ private struct MergeRequestCacheEntry {
         for branch in branches.subtracting(existing).sorted() {
             projects[index].worktreeGroups.append(WorktreeGroup(name: branch, branch: branch))
         }
+        // A branch change does not make the directory being browsed unavailable.
+        // Preserve it as an explicit selection before pruning unmatched groups.
+        if let groupIndex = projects[index].worktreeGroups.firstIndex(where: { $0.id == selectedWorktreeGroupID }),
+           let branch = projects[index].worktreeGroups[groupIndex].branch,
+           !projects[index].worktreeGroups[groupIndex].isPrimary {
+            for scan in scans where scan.error == nil {
+                guard projects[index].worktreeGroups[groupIndex].selections[scan.repository.id] == nil,
+                      let previous = snapshots.first(where: { $0.repository.id == scan.repository.id })?.selected,
+                      !previous.isPrimary, previous.branch == branch,
+                      let current = scan.worktrees.first(where: { $0.path == previous.path }),
+                      current.branch != branch else { continue }
+                projects[index].worktreeGroups[groupIndex].selections[scan.repository.id] = current.path
+            }
+        }
+        // A selected detached group becomes a saved group when its checkout
+        // attaches to a branch; its identity and directory remain stable.
+        if let groupIndex = projects[index].worktreeGroups.firstIndex(where: { $0.id == selectedWorktreeGroupID }),
+           projects[index].worktreeGroups[groupIndex].isTransient,
+           let attached = scans.filter({ $0.error == nil }).flatMap({ scan in
+               scan.worktrees.filter {
+                   projects[index].worktreeGroups[groupIndex].selections[scan.repository.id] == $0.path
+                       && !$0.isDetached
+               }
+           }).first {
+            projects[index].worktreeGroups[groupIndex].isTransient = false
+            if let branch = attached.branch { projects[index].worktreeGroups[groupIndex].name = branch }
+        }
         let oldGroups = projects[index].worktreeGroups
+        // An incomplete scan cannot prove that a branch disappeared from every
+        // repository. Keep navigation and persisted choices until reads succeed.
+        let scanIsComplete = scans.allSatisfy { $0.error == nil }
         projects[index].worktreeGroups.removeAll { group in
-            guard let branch = group.branch else { return false }
+            guard scanIsComplete, let branch = group.branch else { return false }
             return !branches.contains(branch) && group.selections.isEmpty
         }
         // Detached worktrees have no branch. Give each a temporary, selectable group.
@@ -721,7 +775,8 @@ private struct MergeRequestCacheEntry {
         }
         let detachedByID = Dictionary(uniqueKeysWithValues: discoveredDetached.map { ($0.id, $0) })
         projects[index].worktreeGroups = projects[index].worktreeGroups.compactMap { group in
-            group.isTransient ? detachedByID[group.id] : group
+            guard group.isTransient else { return group }
+            return detachedByID[group.id] ?? (scanIsComplete ? nil : group)
         }
         let retainedIDs = Set(projects[index].worktreeGroups.map(\.id))
         projects[index].worktreeGroups.append(contentsOf: discoveredDetached.filter { !retainedIDs.contains($0.id) })
@@ -733,9 +788,14 @@ private struct MergeRequestCacheEntry {
         guard let group = selectedGroup else { isRefreshing = false; return }
         var selections: [(Repository, [Worktree], Worktree?, Bool, String?)] = []
         for scan in scans {
+            if let error = scan.error,
+               let previous = snapshots.first(where: { $0.repository.id == scan.repository.id }) {
+                selections.append((scan.repository, previous.worktrees, previous.selected, previous.isFallback, error))
+                continue
+            }
             let requested = group.selections[scan.repository.id]
             let manual = requested.flatMap { path in scan.worktrees.first(where: { $0.path == path }) }
-            if requested != nil && manual == nil {
+            if scan.error == nil && requested != nil && manual == nil {
                 if let groupIndex = projects[index].worktreeGroups.firstIndex(where: { $0.id == group.id }) {
                     projects[index].worktreeGroups[groupIndex].selections.removeValue(forKey: scan.repository.id)
                 }
@@ -768,6 +828,10 @@ private struct MergeRequestCacheEntry {
                 await boundedConcurrentMap(selections) { selection -> RepositorySnapshot in
                     let (repository, worktrees, selected, fallback, scanError) = selection
                     let snapshot: RepositorySnapshot = {
+                    if let scanError {
+                        return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: selected,
+                                                  isFallback: fallback, files: [], error: scanError, mergeRequestURL: nil)
+                    }
                     guard let selected else {
                         return RepositorySnapshot(repository: repository, worktrees: worktrees, selected: nil,
                                                   isFallback: false, files: [], error: scanError ?? AppLocalization.text("没有有效的检出目录"),
@@ -906,11 +970,13 @@ private struct MergeRequestCacheEntry {
             state.detail = AppLocalization.text("正在读取…")
             state.imagePreview = nil
             state.commitPatch = nil
+            state.filePresentation = FileDiffPresentation()
             state.splitDiff = SplitDiff(rows: [], hasChanges: false)
         }
         state.readError = nil
         let previousDetail = state.detail
         let previousDiff = state.splitDiff
+        let previousPresentation = state.filePresentation
         let session = GitReadSession()
         state.readSession = session
         state.task = Task.detached(priority: .utility) {
@@ -928,6 +994,9 @@ private struct MergeRequestCacheEntry {
                 let splitDiff = file != nil
                     ? (output == previousDetail ? previousDiff : SplitDiff.parse(output))
                     : SplitDiff(rows: [], hasChanges: false)
+                let presentation = file != nil
+                    ? (output == previousDetail ? previousPresentation : FileDiffPresentation.prepare(output))
+                    : FileDiffPresentation()
                 let readFailure = failure
                 await MainActor.run {
                     guard state.generation == generation else { return }
@@ -936,6 +1005,7 @@ private struct MergeRequestCacheEntry {
                         state.detail = output
                         state.splitDiff = splitDiff
                     }
+                    state.filePresentation = presentation
                     state.imagePreview = preview
                     state.commitPatch = patch
                 }

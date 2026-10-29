@@ -7,6 +7,20 @@ private struct WorktreeRowFrames: PreferenceKey {
     }
 }
 
+private struct RepositoryRowFrames: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private struct RepositoryGroupFrames: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
 private struct IconActionButton: View {
     let systemName: String
     let hint: String
@@ -193,6 +207,12 @@ struct ContentView: View {
     @State private var draggingWorktreeProject: UUID?
     @State private var worktreeDragOffset: CGFloat = 0
     @State private var worktreeRowFrames: [UUID: CGRect] = [:]
+    @State private var draggingRepository: UUID?
+    @State private var draggingRepositoryGroup: UUID?
+    @State private var repositoryDragProject: UUID?
+    @State private var repositoryDragOffset: CGFloat = 0
+    @State private var repositoryFrames: [UUID: CGRect] = [:]
+    @State private var repositoryGroupFrames: [UUID: CGRect] = [:]
     @AppStorage(AppTypography.fontSizeKey) private var fontSize = AppTypography.defaultFontSize
 
     private var initialSidebarWidth: CGFloat {
@@ -347,8 +367,25 @@ struct ContentView: View {
                             sidebarHeader("关联仓库", action: .repositoryGroup)
                             ForEach(project.groups) { group in
                                 repositoryGroupRow(group, in: project)
+                                    .offset(y: draggingRepositoryGroup == group.id ? repositoryDragOffset : 0)
+                                    .background {
+                                        GeometryReader { geometry in
+                                            Color.clear.preference(key: RepositoryGroupFrames.self,
+                                                value: [group.id: geometry.frame(in: .named("repositories"))])
+                                        }
+                                    }
+                                    .zIndex(draggingRepositoryGroup == group.id ? 2 : 0)
+                                    .overlay(alignment: repositoryGroupBefore(group.id) ? .top : .bottom) {
+                                        if repositoryGroupTarget == group.id && draggingRepositoryGroup != group.id {
+                                            insertionLine
+                                        }
+                                    }
+                                    .animation(.easeInOut(duration: 0.12), value: repositoryGroupTarget)
                             }
                         }
+                        .coordinateSpace(name: "repositories")
+                        .onPreferenceChange(RepositoryRowFrames.self) { repositoryFrames = $0 }
+                        .onPreferenceChange(RepositoryGroupFrames.self) { repositoryGroupFrames = $0 }
                     }
                 }
                 .padding(8)
@@ -392,20 +429,100 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(WorkbenchHoverButtonStyle())
+                .highPriorityGesture(DragGesture(minimumDistance: 5, coordinateSpace: .named("repositories"))
+                    .onChanged { value in
+                        draggingRepositoryGroup = group.id; repositoryDragProject = project.id
+                        repositoryDragOffset = value.translation.height
+                    }
+                    .onEnded { value in
+                        repositoryDragOffset = value.translation.height
+                        finishRepositoryGroupDrag(group.id, projectID: project.id)
+                    })
                 .accessibilityLabel(AppLocalization.text(expanded ? "收起仓库组 %@" : "展开仓库组 %@", group.name))
                 IconActionButton(systemName: "folder.badge.plus", hint: AppLocalization.text("导入仓库到%@", group.name)) {
                     chooseRepositories(for: group.id)
                 }
             }
             .padding(.horizontal, 10)
+            .overlay(RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(draggingRepositoryGroup == group.id ? WorkbenchStyle.accent : .clear))
             .contextMenu {
                 Button("删除仓库组") { model.removeRepositoryGroup(group.id) }
             }
             if expanded {
                 ForEach(repositories) { repository in
                     repositoryRow(repository)
+                        .offset(y: draggingRepository == repository.id ? repositoryDragOffset : 0)
+                        .background {
+                            GeometryReader { geometry in
+                                Color.clear.preference(key: RepositoryRowFrames.self,
+                                    value: [repository.id: geometry.frame(in: .named("repositories"))])
+                            }
+                        }
+                        .zIndex(draggingRepository == repository.id ? 1 : 0)
+                        .overlay(RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(draggingRepository == repository.id ? WorkbenchStyle.accent : .clear))
+                        .overlay(alignment: repositoryBefore(repository.id) ? .top : .bottom) {
+                            if repositoryTarget == repository.id && draggingRepository != repository.id { insertionLine }
+                        }
+                        .animation(.easeInOut(duration: 0.12), value: repositoryTarget)
                 }
             }
+        }
+    }
+
+    private var insertionLine: some View {
+        Capsule().fill(WorkbenchStyle.accent).frame(height: 2).padding(.horizontal, 5)
+            .allowsHitTesting(false).transition(.opacity)
+    }
+
+    private var repositoryTarget: UUID? {
+        guard let id = draggingRepository, let project = model.selectedProject,
+              let source = project.repositories.first(where: { $0.id == id }), let frame = repositoryFrames[id] else { return nil }
+        let position = frame.midY + repositoryDragOffset
+        return project.repositories.filter { $0.groupID == source.groupID && repositoryFrames[$0.id] != nil }.min {
+            abs(repositoryFrames[$0.id]!.midY - position) < abs(repositoryFrames[$1.id]!.midY - position)
+        }?.id
+    }
+
+    private var repositoryGroupTarget: UUID? {
+        guard let id = draggingRepositoryGroup, let project = model.selectedProject,
+              let frame = repositoryGroupFrames[id] else { return nil }
+        let position = frame.minY + 14 + repositoryDragOffset
+        return project.groups.filter { repositoryGroupFrames[$0.id] != nil }.min {
+            abs(repositoryGroupFrames[$0.id]!.minY + 14 - position) < abs(repositoryGroupFrames[$1.id]!.minY + 14 - position)
+        }?.id
+    }
+
+    private func repositoryBefore(_ id: UUID) -> Bool {
+        guard let repositories = model.selectedProject?.repositories,
+              let source = repositories.firstIndex(where: { $0.id == draggingRepository }),
+              let target = repositories.firstIndex(where: { $0.id == id }) else { return false }
+        return target < source
+    }
+
+    private func repositoryGroupBefore(_ id: UUID) -> Bool {
+        guard let groups = model.selectedProject?.groups,
+              let source = groups.firstIndex(where: { $0.id == draggingRepositoryGroup }),
+              let target = groups.firstIndex(where: { $0.id == id }) else { return false }
+        return target < source
+    }
+
+    private func finishRepositoryGroupDrag(_ id: UUID, projectID: UUID) {
+        let target = repositoryGroupTarget
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if draggingRepositoryGroup == id, repositoryDragProject == projectID,
+               model.selectedProjectID == projectID, let target { model.reorderRepositoryGroup(id, relativeTo: target) }
+            draggingRepositoryGroup = nil; repositoryDragProject = nil; repositoryDragOffset = 0
+        }
+    }
+
+    private func finishRepositoryDrag(_ id: UUID, projectID: UUID) {
+        let target = repositoryTarget
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if draggingRepository == id, repositoryDragProject == projectID,
+               model.selectedProjectID == projectID, let target { model.reorderRepository(id, relativeTo: target) }
+            draggingRepository = nil; repositoryDragProject = nil; repositoryDragOffset = 0
         }
     }
 
@@ -589,6 +706,17 @@ struct ContentView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .highPriorityGesture(DragGesture(minimumDistance: 5, coordinateSpace: .named("repositories"))
+                .onChanged { value in
+                    guard let projectID = model.selectedProjectID else { return }
+                    draggingRepository = repository.id; repositoryDragProject = projectID
+                    repositoryDragOffset = value.translation.height
+                }
+                .onEnded { value in
+                    guard let projectID = repositoryDragProject else { return }
+                    repositoryDragOffset = value.translation.height
+                    finishRepositoryDrag(repository.id, projectID: projectID)
+                })
             .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             if let selected = snapshot?.selected {
                 HStack(spacing: 4) {
@@ -741,16 +869,14 @@ struct ContentView: View {
         VStack(spacing: 0) {
             HSplitView {
                 ZStack {
-                    changesList
-                        .opacity(model.activeTab == 0 ? 1 : 0)
-                        .allowsHitTesting(model.activeTab == 0)
-                        .disabled(model.activeTab != 0)
-                        .accessibilityHidden(model.activeTab != 0)
-                    commitsList
-                        .opacity(model.activeTab == 1 ? 1 : 0)
-                        .allowsHitTesting(model.activeTab == 1)
-                        .accessibilityHidden(model.activeTab != 1)
+                    RetainedPane(isActive: model.activeTab == 0) {
+                        changesList.environmentObject(model)
+                    }
+                    RetainedPane(isActive: model.activeTab == 1) {
+                        commitsList.environmentObject(model)
+                    }
                 }
+                .frame(minWidth: 280, idealWidth: model.activeTab == 1 ? 700 * AppTypography.scale(for: fontSize) : 340)
                 detailPane
             }
             HStack {
@@ -975,11 +1101,9 @@ struct ContentView: View {
             Divider()
             ZStack {
                 ForEach(model.commitScopes) { scope in
-                    commitList(scope)
-                        .disabled(scope.repositoryID != model.commitRepositoryID || model.activeTab != 1)
-                        .opacity(scope.repositoryID == model.commitRepositoryID ? 1 : 0)
-                        .allowsHitTesting(scope.repositoryID == model.commitRepositoryID)
-                        .accessibilityHidden(scope.repositoryID != model.commitRepositoryID)
+                    RetainedPane(isActive: scope.repositoryID == model.commitRepositoryID && model.activeTab == 1) {
+                        commitList(scope).environmentObject(model)
+                    }
                 }
             }
         }
@@ -1135,17 +1259,15 @@ struct ContentView: View {
 
     private var detailPane: some View {
         ZStack {
-            DetailPaneView(state: model.detailStates[0], tab: 0)
-                .environment(\.markdownReviewIsActive, model.activeTab == 0)
-                .opacity(model.activeTab == 0 ? 1 : 0)
-                .allowsHitTesting(model.activeTab == 0)
-                .accessibilityHidden(model.activeTab != 0)
+            RetainedPane(isActive: model.activeTab == 0) {
+                DetailPaneView(state: model.detailStates[0], tab: 0)
+                    .environmentObject(model)
+            }
             ForEach(model.commitScopes) { scope in
-                DetailPaneView(state: scope.detail, tab: 1)
-                    .environment(\.markdownReviewIsActive, model.activeTab == 1 && scope.repositoryID == model.commitRepositoryID)
-                    .opacity(model.activeTab == 1 && scope.repositoryID == model.commitRepositoryID ? 1 : 0)
-                    .allowsHitTesting(model.activeTab == 1 && scope.repositoryID == model.commitRepositoryID)
-                    .accessibilityHidden(model.activeTab != 1 || scope.repositoryID != model.commitRepositoryID)
+                RetainedPane(isActive: model.activeTab == 1 && scope.repositoryID == model.commitRepositoryID) {
+                    DetailPaneView(state: scope.detail, tab: 1)
+                        .environmentObject(model)
+                }
             }
         }
         .frame(minWidth: 430)
@@ -1380,8 +1502,8 @@ private struct NameSheet: View {
     }
 }
 
-// Keep both panes mounted so their file selection, layout and native scroll
-// positions survive tab switches without reloading the selected diff.
+// Retain visited panes so their selection and native scroll positions survive
+// tab switches. RetainedPane freezes hidden viewports during window resizing.
 private struct DetailPaneView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var state: DetailState
@@ -1397,6 +1519,7 @@ private struct DetailPaneView: View {
 
     var body: some View {
         detailPane
+            .environment(\.markdownReviewIsActive, isActive)
             .focusable().focused($detailFocused).focusEffectDisabled()
             .onChange(of: model.detailFocusRequest) { _, _ in if isActive { detailFocused = true } }
             .onChange(of: model.nextHunkRequest) { _, _ in if isActive { diffSearch.moveHunk(1) } }
@@ -1475,7 +1598,7 @@ private struct DetailPaneView: View {
             } else if detailLayout == .preview, let file = state.selectedFile,
                       MarkdownPreview.supports(file.path),
                       let checkout = model.snapshots.first(where: { $0.repository.id == file.repositoryID })?.selected?.path {
-                MarkdownReviewView(path: file.path, oldPath: CommitPatch.parse(state.detail, prepareDiff: false).files.first?.oldPath,
+                MarkdownReviewView(path: file.path, oldPath: state.filePresentation.oldPath,
                                    checkout: checkout, mode: state.diffMode, untracked: file.isUntracked,
                                    revision: "\(state.generation):\(state.detail)", preferOld: file.changeKind == .deleted,
                                    oldTitle: oldDiffTitle, newTitle: newDiffTitle)
@@ -1484,7 +1607,7 @@ private struct DetailPaneView: View {
                 ImageDiffView(preview: preview, oldTitle: oldDiffTitle, newTitle: newDiffTitle)
                     .id(detailScrollIdentity)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if detailLayout != .patch && splitDiff.hasChanges && !CommitPatch.parse(state.detail, prepareDiff: false).files.contains(where: { $0.summaryTitle != nil }) {
+            } else if detailLayout != .patch && splitDiff.hasChanges && !state.filePresentation.hasSummary {
                 SplitDiffView(diff: splitDiff, oldTitle: oldDiffTitle, newTitle: newDiffTitle,
                               resetID: detailScrollIdentity, search: diffSearch,
                               discardTargets: canDiscard ? discardTargets : nil,

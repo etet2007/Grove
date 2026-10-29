@@ -257,6 +257,15 @@ struct GitClient {
             }
         }
         if path != nil { finish() }
+        // Git exits successfully even when a linked checkout's HEAD is empty,
+        // truncated or missing. Such a record cannot prove its branch disappeared.
+        // A named branch with a zero HEAD remains valid for an unborn checkout.
+        if let unreadable = result.first(where: {
+            !$0.isPrimary && $0.branch == nil
+                && (!$0.isDetached || !$0.head.contains(where: { $0 != "0" }))
+        }) {
+            throw GitError.command(AppLocalization.text("无法读取工作树 HEAD：%@。请刷新后重试。", unreadable.path))
+        }
         return result.filter { FileManager.default.fileExists(atPath: $0.path) }
     }
 

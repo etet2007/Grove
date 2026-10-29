@@ -1,36 +1,149 @@
 import SwiftUI
 
+private enum DiffSearchSource {
+    enum ID: Equatable {
+        case split(UUID), plain(String), patch(String)
+    }
+    case split(SplitDiff), plain(String), patch(String)
+    var id: ID {
+        switch self {
+        case .split(let diff): return .split(diff.contentID)
+        case .plain(let text): return .plain(text)
+        case .patch(let text): return .patch(text)
+        }
+    }
+}
+
+struct DiffSearchLine: Identifiable, Equatable, Sendable {
+    let id: Int
+    let text: String
+}
+
+private struct DiffSearchResult {
+    let matches: [Int]
+    let matchingRows: Set<Int>
+}
+
+private struct DiffSearchIndex {
+    let lines: [DiffSearchLine]
+    let hunks: [Int]
+    let displayLines: [DiffSearchLine]
+
+    static func prepare(_ source: DiffSearchSource) -> DiffSearchIndex? {
+        var lines: [DiffSearchLine] = []
+        var hunks: [Int] = []
+        var displayLines: [DiffSearchLine] = []
+        switch source {
+        case .split(let diff):
+            lines.reserveCapacity(diff.rows.count)
+            for (offset, row) in diff.rows.enumerated() {
+                if offset.isMultiple(of: 512), Task.isCancelled { return nil }
+                lines.append(DiffSearchLine(id: row.id, text: [row.old?.text, row.new?.text].compactMap { $0 }.joined(separator: "\n")))
+                if row.old?.kind == .hunk || row.new?.kind == .hunk { hunks.append(row.id) }
+            }
+        case .plain(let text), .patch(let text):
+            let readable: String
+            if case .patch = source { readable = PatchPresentation.readableText(text) }
+            else { readable = text }
+            let rawLines = readable.components(separatedBy: "\n")
+            lines.reserveCapacity(rawLines.count)
+            for (offset, line) in rawLines.enumerated() {
+                if offset.isMultiple(of: 512), Task.isCancelled { return nil }
+                lines.append(DiffSearchLine(id: offset, text: line))
+                if line.hasPrefix("@@ ") { hunks.append(offset) }
+            }
+            displayLines = lines
+        }
+        return Task.isCancelled ? nil : DiffSearchIndex(lines: lines, hunks: hunks, displayLines: displayLines)
+    }
+
+    func find(_ query: String) -> DiffSearchResult? {
+        var matches: [Int] = []
+        for (offset, line) in lines.enumerated() {
+            if offset.isMultiple(of: 512), Task.isCancelled { return nil }
+            if line.text.localizedCaseInsensitiveContains(query) { matches.append(line.id) }
+        }
+        guard !Task.isCancelled else { return nil }
+        return DiffSearchResult(matches: matches, matchingRows: Set(matches))
+    }
+}
+
 @MainActor final class DiffSearch: ObservableObject {
     @Published var isPresented = false
-    @Published var query = "" { didSet { rebuild() } }
+    @Published var query = "" { didSet { if query != oldValue { scheduleSearch() } } }
+    @Published private(set) var isSearching = false
     @Published private(set) var matches: [Int] = []
+    @Published private(set) var matchingRows: Set<Int> = []
+    @Published private(set) var displayLines: [DiffSearchLine] = []
     @Published private(set) var selected = 0
     @Published private(set) var targetRow: Int?
     @Published private(set) var navigationID = UUID()
-    private var lines: [(Int, String)] = []
-    private var hunks: [Int] = []
-    private var contentID: String = ""
+    private var index: DiffSearchIndex?
+    private var sourceID: DiffSearchSource.ID?
+    private var contentGeneration = 0
+    private var searchGeneration = 0
+    private var indexTask: Task<Void, Never>?
+    private var searchTask: Task<Void, Never>?
 
-    func prepare(_ diff: SplitDiff) {
-        guard contentID != diff.contentID.uuidString else { return }
-        contentID = diff.contentID.uuidString
-        lines = diff.rows.map { ($0.id, [$0.old?.text, $0.new?.text].compactMap { $0 }.joined(separator: "\n")) }
-        hunks = diff.rows.filter { $0.old?.kind == .hunk || $0.new?.kind == .hunk }.map(\.id)
-        rebuild()
+    deinit { indexTask?.cancel(); searchTask?.cancel() }
+
+    func prepare(_ diff: SplitDiff) { prepare(.split(diff)) }
+    func prepare(text: String) { prepare(.plain(text)) }
+    func prepare(patch: String) { prepare(.patch(patch)) }
+
+    private func prepare(_ source: DiffSearchSource) {
+        guard sourceID != source.id else { return }
+        sourceID = source.id
+        contentGeneration += 1
+        let generation = contentGeneration
+        indexTask?.cancel()
+        searchTask?.cancel()
+        index = nil
+        displayLines = []
+        clearResults()
+        isSearching = !query.isEmpty
+        indexTask = Task { [weak self] in
+            let worker = Task.detached(priority: .userInitiated) { DiffSearchIndex.prepare(source) }
+            let result = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: { worker.cancel() }
+            guard !Task.isCancelled, let self, self.contentGeneration == generation, let result else { return }
+            self.index = result
+            self.displayLines = result.displayLines
+            self.scheduleSearch()
+        }
     }
-    func prepare(text: String) {
-        guard contentID != text else { return }
-        contentID = text
-        lines = text.components(separatedBy: "\n").enumerated().map { ($0.offset, $0.element) }
-        hunks = lines.filter { $0.1.hasPrefix("@@ ") }.map { $0.0 }
-        rebuild()
-    }
-    private func rebuild() {
-        matches = query.isEmpty ? [] : lines.filter { $0.1.localizedCaseInsensitiveContains(query) }.map { $0.0 }
-        selected = 0
-        targetRow = matches.first
+
+    private func clearResults() {
+        matches = []; matchingRows = []; selected = 0; targetRow = nil
         navigationID = UUID()
     }
+
+    private func scheduleSearch() {
+        searchGeneration += 1
+        let generation = searchGeneration
+        searchTask?.cancel()
+        clearResults()
+        guard !query.isEmpty else { isSearching = false; return }
+        isSearching = true
+        guard let index else { return } // The latest query will run when preparation completes.
+        let query = query
+        searchTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(80)) } catch { return }
+            let worker = Task.detached(priority: .userInitiated) { index.find(query) }
+            let result = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: { worker.cancel() }
+            guard !Task.isCancelled, let self, self.searchGeneration == generation, let result else { return }
+            self.matches = result.matches
+            self.matchingRows = result.matchingRows
+            self.selected = 0
+            self.targetRow = result.matches.first
+            self.isSearching = false
+            self.navigationID = UUID()
+        }
+    }
+
     func move(_ delta: Int) {
         guard !matches.isEmpty else { return }
         selected = (selected + delta + matches.count) % matches.count
@@ -38,7 +151,7 @@ import SwiftUI
         navigationID = UUID()
     }
     func moveHunk(_ delta: Int) {
-        guard !hunks.isEmpty else { return }
+        guard let hunks = index?.hunks, !hunks.isEmpty else { return }
         let current = targetRow ?? (delta > 0 ? -1 : Int.max)
         targetRow = delta > 0 ? (hunks.first { $0 > current } ?? hunks[0]) : (hunks.last { $0 < current } ?? hunks.last)
         navigationID = UUID()
@@ -51,7 +164,7 @@ struct DiffSearchBar: View {
         HStack(spacing: 8) {
             WorkbenchSearchField(title: "搜索 diff（按匹配行）", text: $search.query, autofocus: true)
                 .onSubmit { search.move(1) }
-            Text(search.matches.isEmpty ? "0" : "\(search.selected + 1)/\(search.matches.count)")
+            Text(search.isSearching ? "…" : search.matches.isEmpty ? "0" : "\(search.selected + 1)/\(search.matches.count)")
                 .monospacedDigit().foregroundStyle(.secondary)
             Button { search.move(-1) } label: { Image(systemName: "chevron.up") }.help(AppLocalization.text("上一个匹配"))
                 .disabled(search.matches.isEmpty)
@@ -75,14 +188,14 @@ struct SearchablePatchView: View {
             ScrollView([.vertical, .horizontal]) {
                 if search.isPresented {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(PatchPresentation.readableText(text).components(separatedBy: "\n").enumerated()), id: \.offset) { index, line in
-                            Text(line.isEmpty ? " " : line)
+                        ForEach(search.displayLines) { line in
+                            Text(line.text.isEmpty ? " " : line.text)
                                 .appFont(size: 12, design: .monospaced)
-                                .foregroundStyle(line.hasPrefix("+") ? .green : line.hasPrefix("-") ? .red : .primary)
+                                .foregroundStyle(line.text.hasPrefix("+") ? .green : line.text.hasPrefix("-") ? .red : .primary)
                                 .textSelection(.enabled)
                                 .padding(.vertical, 2)
-                                .background(search.matches.contains(index) ? Color.yellow.opacity(search.targetRow == index ? 0.35 : 0.14) : .clear)
-                                .id(index)
+                                .background(search.matchingRows.contains(line.id) ? Color.yellow.opacity(search.targetRow == line.id ? 0.35 : 0.14) : .clear)
+                                .id(line.id)
                         }
                     }.padding(16)
                 } else {
@@ -92,7 +205,10 @@ struct SearchablePatchView: View {
             .onChange(of: search.navigationID) { _, _ in
                 if let row = search.targetRow { proxy.scrollTo(row, anchor: .center) }
             }
-            .task(id: text) { search.prepare(text: PatchPresentation.readableText(text)) }
+            .task(id: text) {
+                guard !Task.isCancelled else { return }
+                search.prepare(patch: text)
+            }
         }
     }
 }

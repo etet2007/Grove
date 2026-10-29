@@ -14,9 +14,15 @@ struct SplitDiffView: View {
 
     var body: some View {
         if let singleSide {
-            column(side: singleSide).task(id: diff.contentID) { search?.prepare(diff) }
+            column(side: singleSide).task(id: diff.contentID) {
+                guard !Task.isCancelled else { return }
+                search?.prepare(diff)
+            }
         } else {
-            ResizableDiffPanes(old: column(side: .old), new: column(side: .new)).task(id: diff.contentID) { search?.prepare(diff) }
+            ResizableDiffPanes(old: column(side: .old), new: column(side: .new)).task(id: diff.contentID) {
+                guard !Task.isCancelled else { return }
+                search?.prepare(diff)
+            }
         }
     }
 
@@ -83,12 +89,15 @@ private struct ResizableDiffPanes<Pane: View>: NSViewRepresentable {
     }
 }
 
-private final class DiffPaneSplitView: NSSplitView, NSSplitViewDelegate {
+private final class DiffPaneSplitView: NSSplitView {
     private var dividerTrackingArea: NSTrackingArea?
+    // Keep the delegate distinct from the split to avoid recursive AppKit
+    // sidebar action lookup when menus are validated.
+    private let dividerDelegate = DividerDelegate()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        delegate = self
+        delegate = dividerDelegate
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -146,18 +155,21 @@ private final class DiffPaneSplitView: NSSplitView, NSSplitViewDelegate {
         }
     }
 
-    func splitView(_ splitView: NSSplitView, additionalEffectiveRectOfDividerAt dividerIndex: Int) -> NSRect {
-        dragRect
-    }
+    private final class DividerDelegate: NSObject, NSSplitViewDelegate {
+        func splitView(_ splitView: NSSplitView, additionalEffectiveRectOfDividerAt dividerIndex: Int) -> NSRect {
+            (splitView as? DiffPaneSplitView)?.dragRect ?? .zero
+        }
 
-    func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMinimumPosition: CGFloat,
-                   ofSubviewAt dividerIndex: Int) -> CGFloat {
-        min(140, max(0, (bounds.width - dividerThickness) / 2))
-    }
+        func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMinimumPosition: CGFloat,
+                       ofSubviewAt dividerIndex: Int) -> CGFloat {
+            min(140, max(0, (splitView.bounds.width - splitView.dividerThickness) / 2))
+        }
 
-    func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMaximumPosition: CGFloat,
-                   ofSubviewAt dividerIndex: Int) -> CGFloat {
-        max(0, bounds.width - dividerThickness - min(140, max(0, (bounds.width - dividerThickness) / 2)))
+        func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMaximumPosition: CGFloat,
+                       ofSubviewAt dividerIndex: Int) -> CGFloat {
+            let available = splitView.bounds.width - splitView.dividerThickness
+            return max(0, available - min(140, max(0, available / 2)))
+        }
     }
 }
 
@@ -424,7 +436,7 @@ private struct SynchronizedHorizontalScrollView: NSViewRepresentable {
         if let search {
             let navigate = context.coordinator.navigationID != search.navigationID
             context.coordinator.navigationID = search.navigationID
-            document.showSearch(matches: Set(search.matches), selected: search.targetRow, navigate: navigate, query: search.query)
+            document.showSearch(matches: search.matchingRows, selected: search.targetRow, navigate: navigate, query: search.query)
         }
     }
 

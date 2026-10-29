@@ -77,12 +77,15 @@ final class BrowsingSupportTests: XCTestCase {
         XCTAssertEqual(full, pages)
     }
 
-    @MainActor func testDiffSearchMatchesBothSidesWrapsAndNavigatesVirtualRows() {
+    @MainActor func testDiffSearchMatchesBothSidesWrapsAndNavigatesVirtualRows() async throws {
         let patch = "--- a/file\n+++ b/file\n@@ -1,1 +1,1 @@\n-before needle\n+after needle\n@@ -1000,1 +1000,1 @@\n-last\n+final needle\n"
         let diff = SplitDiff.parse(patch)
         let search = DiffSearch()
         search.prepare(diff)
         search.query = "NEEDLE"
+        let deadline = Date().addingTimeInterval(3)
+        while search.isSearching, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(search.isSearching)
         XCTAssertEqual(search.matches.count, 2, "A replacement matching both sides counts once per row")
         let first = search.targetRow
         search.move(-1)
@@ -146,6 +149,40 @@ final class BrowsingSupportTests: XCTestCase {
         try await waitUntil { !model.isRefreshing }
         XCTAssertNil(model.historyErrors[repository.id])
         XCTAssertEqual(model.commits.first?.hash, commit.hash)
+    }
+
+    @MainActor func testFilePresentationIsPreparedAndReplacedWithTheSelectedDiff() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let checkout = root.appendingPathComponent("checkout")
+        try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
+        try repository(checkout)
+        try "# original\n".write(to: checkout.appendingPathComponent("old.md"), atomically: true, encoding: .utf8)
+        _ = try GitClient.text(["add", "."], in: checkout.path)
+        _ = try GitClient.text(["commit", "-m", "initial"], in: checkout.path)
+        try "".write(to: checkout.appendingPathComponent("new.md"), atomically: true, encoding: .utf8)
+        _ = try GitClient.text(["add", "new.md"], in: checkout.path)
+        let group = WorktreeGroup(name: "Primary", isPrimary: true)
+        let repository = Repository(name: "test", path: checkout.path, groupID: UUID())
+        var project = Project(name: "Presentation")
+        project.repositories = [repository]; project.worktreeGroups = [group]
+        let config = root.appendingPathComponent("config.json")
+        try ConfigurationStore(url: config).save(Configuration(projects: [project], selectedProjectID: project.id, selectedWorktreeGroupID: group.id))
+        let model = AppModel(configURL: config)
+        model.automaticRefreshEnabled = false
+        try await waitUntil { !model.isRefreshing }
+        model.selectFile(try XCTUnwrap(model.snapshots.first?.files.first))
+        let state = model.detailStates[0]
+        try await waitUntil { state.filePresentation.hasSummary }
+        XCTAssertNil(state.filePresentation.oldPath)
+        try "# original\nextra\n".write(to: checkout.appendingPathComponent("new.md"), atomically: true, encoding: .utf8)
+        model.refresh()
+        try await waitUntil { !model.isRefreshing }
+        model.selectFile(try XCTUnwrap(model.snapshots.first?.files.first))
+        try await waitUntil { state.detail.contains("+extra") }
+        XCTAssertNil(state.filePresentation.oldPath)
+        XCTAssertFalse(state.filePresentation.hasSummary)
+        XCTAssertTrue(state.splitDiff.hasChanges)
     }
 
     func testFileFiltersKeepPartiallyStagedChangesInBothScopes() {
