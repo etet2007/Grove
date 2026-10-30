@@ -6,6 +6,8 @@ MyGit 是一个原生 macOS Git 客户端，用于快速浏览同一工程内多
 
 需要 macOS 14 或更新版本，以及 Xcode 命令行工具。运行 `zsh scripts/build-app.sh` 后，双击 `dist/MyGit.app`。
 
+应用图标原始素材为 `Resources/MyGitIcon-source.png`。运行 `zsh scripts/generate-icon.sh` 可重新生成带 macOS 圆角及透明留白的 PNG 和多尺寸 ICNS，再构建应用即可使用。
+
 构建脚本默认使用登录钥匙串中的 `MyGit Local Code Signing` 证书签名，不再使用每次改动后身份都会变化的临时签名。首次在本机配置时，可以在「钥匙串访问」的「证书助理 → 创建证书」中创建同名的「自签名根证书」，证书类型选「代码签名」。如果已有其他代码签名证书，可运行 `MYGIT_SIGNING_IDENTITY="证书名称" zsh scripts/build-app.sh`。自签名证书仅用于本机开发；向其他人分发时应使用 Developer ID 签名。
 
 首次使用：
