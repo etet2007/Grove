@@ -72,7 +72,7 @@ enum AppUpdateService {
 
     static func prepareInstallation(_ update: PreparedAppUpdate, currentApp: URL) throws -> URL {
         guard currentApp.pathExtension == "app", FileManager.default.isWritableFile(atPath: currentApp.deletingLastPathComponent().path),
-              !currentApp.path.hasPrefix("/Volumes/") else { throw UpdateFailure("请先将 MyGit 放到可写的应用目录，再更新。") }
+              !currentApp.path.hasPrefix("/Volumes/") else { throw UpdateFailure("请先将 Grove 放到可写的应用目录，再更新。") }
         try verifyArchive(Data(contentsOf: update.archive), manifest: update.manifest)
         let extracted = update.directory.appendingPathComponent("extracted")
         try FileManager.default.createDirectory(at: extracted, withIntermediateDirectories: true)
@@ -172,7 +172,7 @@ enum AppUpdateService {
         guard CheckoutOperationLock.beginAppUpdate() else { message = AppLocalization.text("请等待 Git 操作完成后再更新。"); return }
         guard NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "dev.stephenlau.mygit").count <= 1 else {
             CheckoutOperationLock.endAppUpdate()
-            message = AppLocalization.text("请先退出其他 MyGit 实例。"); return
+            message = AppLocalization.text("请先退出其他 Grove 实例。"); return
         }
         busy = true; message = AppLocalization.text("正在校验并准备安装…")
         Task {

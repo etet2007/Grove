@@ -65,7 +65,7 @@ struct SettingsView: View {
                     }
                 }
                 Spacer()
-                Text("MyGit").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+                Text("Grove").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
             }
             .padding(16).padding(.top, 12)
@@ -123,7 +123,7 @@ private struct GeneralSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                SettingsPageHeader(title: "通用", subtitle: "调整 MyGit 的语言和阅读体验。")
+                SettingsPageHeader(title: "通用", subtitle: "调整 Grove 的语言和阅读体验。")
                 SettingsCard(title: "语言") {
                     HStack(alignment: .center) {
                         Text("语言修改将在重启应用后生效。")
@@ -160,7 +160,7 @@ private struct GeneralSettingsView: View {
                         Text("Repository · main").appFont(size: 10).foregroundStyle(.secondary)
                         Divider()
                         Text("+ let fontSize = 12").appFont(size: 12, design: .monospaced).foregroundStyle(.green)
-                        Text("  // MyGit").appFont(size: 12, design: .monospaced).foregroundStyle(.secondary)
+                        Text("  // Grove").appFont(size: 12, design: .monospaced).foregroundStyle(.secondary)
                     }
                     .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                     .background(WorkbenchStyle.background, in: RoundedRectangle(cornerRadius: 8))
@@ -183,7 +183,7 @@ private struct GeneralSettingsView: View {
         let host = NSHostingView(rootView: SettingsView())
         host.sizingOptions = [.minSize]
         window.contentView = host
-        window.title = AppLocalization.text("MyGit 设置")
+        window.title = AppLocalization.text("Grove 设置")
         window.contentMinSize = NSSize(width: 820, height: 620)
         window.isReleasedWhenClosed = false
         if !window.setFrameUsingName("MyGit.Settings") { window.center() }

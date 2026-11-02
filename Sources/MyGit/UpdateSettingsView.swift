@@ -9,9 +9,9 @@ struct UpdateSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                SettingsPageHeader(title: "应用更新", subtitle: "从你指定的 Git 仓库读取已发布的 MyGit。")
+                SettingsPageHeader(title: "应用更新", subtitle: "从你指定的 Git 仓库读取已发布的 Grove。")
                 SettingsCard(title: "更新来源") {
-                    Text(verbatim: "MyGit \(AppUpdater.currentVersion) (\(AppUpdater.currentBuild))")
+                    Text(verbatim: "Grove \(AppUpdater.currentVersion) (\(AppUpdater.currentBuild))")
                         .appFont(size: 13, weight: .medium)
                     Text("Git 仓库地址").appFont(size: 12)
                     WorkbenchTextField(title: "HTTPS 或 SSH 仓库地址", text: $repository)
@@ -31,7 +31,7 @@ struct UpdateSettingsView: View {
                 }
                 if let update = updater.available {
                     SettingsCard(title: "可用更新") {
-                        Text(verbatim: "MyGit \(update.manifest.version) (\(update.manifest.build))")
+                        Text(verbatim: "Grove \(update.manifest.version) (\(update.manifest.build))")
                             .appFont(size: 16, weight: .semibold)
                         if !update.manifest.notes.isEmpty {
                             Text(verbatim: update.manifest.notes).appFont(size: 12).textSelection(.enabled)
@@ -48,7 +48,7 @@ struct UpdateSettingsView: View {
         .buttonStyle(WorkbenchButtonStyle())
         .onChange(of: repository) { _, _ in if !updater.busy { updater.clear() } }
         .onChange(of: branch) { _, _ in if !updater.busy { updater.clear() } }
-        .alert("更新并重启 MyGit？", isPresented: $confirmInstall) {
+        .alert("更新并重启 Grove？", isPresented: $confirmInstall) {
             Button("取消", role: .cancel) {}
             Button("更新并重启") { updater.install() }
         } message: { Text("应用将退出并安装已校验的新版，工程配置会保留。") }

@@ -305,7 +305,7 @@
 
 "设置" = "Settings";
 "通用" = "General";
-"调整 MyGit 的语言和阅读体验。" = "Adjust the language and reading experience.";
+"调整 Grove 的语言和阅读体验。" = "Adjust the language and reading experience.";
 "选择你的 Agent 和 Skill，生成可审阅的提交方案。" = "Choose your agent and skill to prepare commits for review.";
 "正在检测…" = "Detecting…";
 "自动检测本机安装，沿用已有登录配置。" = "Detects local installations and uses your existing login.";
@@ -321,7 +321,7 @@
 "未检测到" = "Not detected";
 "已安装" = "Installed";
 
-"MyGit 设置" = "MyGit Settings";
+"Grove 设置" = "Grove Settings";
 
 "加载提交 Skill" = "Loading commit skill";
 "等待 Agent 生成方案" = "Waiting for the agent to generate a plan";
@@ -473,7 +473,7 @@
 "清除搜索" = "Clear search";
 
 "应用更新" = "App Updates";
-"从你指定的 Git 仓库读取已发布的 MyGit。" = "Get published MyGit versions from your Git repository.";
+"从你指定的 Git 仓库读取已发布的 Grove。" = "Get published Grove versions from your Git repository.";
 "更新来源" = "Update Source";
 "Git 仓库地址" = "Git repository URL";
 "HTTPS 或 SSH 仓库地址" = "HTTPS or SSH repository URL";
@@ -483,14 +483,14 @@
 "可用更新" = "Available Update";
 "确认后退出并替换当前应用，然后重新启动。工程配置会保留。" = "After confirmation, quit, replace the current app, and restart. Your engineering configuration is preserved.";
 "更新并重启…" = "Update and Restart…";
-"更新并重启 MyGit？" = "Update and restart MyGit?";
+"更新并重启 Grove？" = "Update and restart Grove?";
 "更新并重启" = "Update and Restart";
-"应用将退出并安装已校验的新版，工程配置会保留。" = "MyGit will quit and install the verified update. Your engineering configuration is preserved.";
+"应用将退出并安装已校验的新版，工程配置会保留。" = "Grove will quit and install the verified update. Your engineering configuration is preserved.";
 "更新清单无效。" = "The update manifest is invalid.";
 "请输入有效的 Git 仓库地址和分支。" = "Enter a valid Git repository URL and branch.";
 "无法读取更新仓库，请检查地址、分支及本机 Git 认证。" = "Cannot read the update repository. Check its URL, branch, and local Git authentication.";
 "安装包校验失败，请重新检查更新。" = "The archive checksum does not match. Check for updates again.";
-"请先将 MyGit 放到可写的应用目录，再更新。" = "Move MyGit to a writable applications folder before updating.";
+"请先将 Grove 放到可写的应用目录，再更新。" = "Move Grove to a writable applications folder before updating.";
 "安装包格式无效。" = "The update archive format is invalid.";
 "无法解压安装包。" = "Cannot extract the update archive.";
 "安装包版本或应用标识不匹配。" = "The update version or application identifier does not match.";
@@ -499,11 +499,11 @@
 "当前已是最新版本。" = "You are up to date.";
 "新版已准备好，可更新并重启。" = "An update is ready. You can update and restart.";
 "请等待 Git 操作完成后再更新。" = "Wait for Git operations to finish before updating.";
-"请先退出其他 MyGit 实例。" = "Quit other MyGit instances first.";
+"请先退出其他 Grove 实例。" = "Quit other Grove instances first.";
 "正在校验并准备安装…" = "Verifying and preparing the update…";
 "找不到更新安装程序。" = "The update installer is missing.";
 "退出被取消，请退出应用完成更新，或稍后重新检查。" = "Quitting was cancelled. Please check for updates again later.";
 "新版应用不支持当前 Mac 或 macOS 版本。" = "The update does not support this Mac or macOS version.";
-"上次更新未完成，已尝试保留或恢复旧版。详情见 ~/Library/Logs/MyGit/update.log。" = "The previous update did not finish. MyGit attempted to preserve or restore the old version. See ~/Library/Logs/MyGit/update.log.";
+"上次更新未完成，已尝试保留或恢复旧版。详情见 ~/Library/Logs/MyGit/update.log。" = "The previous update did not finish. Grove attempted to preserve or restore the old version. See ~/Library/Logs/MyGit/update.log.";
 "正在加载…" = "Loading…";
 "无法读取工作树 HEAD：%@。请刷新后重试。" = "Cannot read worktree HEAD: %@. Refresh to retry.";
