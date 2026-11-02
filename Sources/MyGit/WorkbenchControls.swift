@@ -1,5 +1,24 @@
 import SwiftUI
 
+/// A compact Git fork with three open nodes, drawn consistently at sidebar sizes.
+struct WorkbenchBranchSymbol: Shape {
+    func path(in rect: CGRect) -> Path {
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x / 24 * rect.width, y: rect.minY + y / 24 * rect.height)
+        }
+        var path = Path()
+        path.move(to: point(6, 7))
+        path.addLine(to: point(6, 17))
+        path.move(to: point(18, 7))
+        path.addCurve(to: point(6, 15), control1: point(18, 15), control2: point(6, 9))
+        for (x, y): (CGFloat, CGFloat) in [(6, 4), (18, 4), (6, 20)] {
+            path.addEllipse(in: CGRect(origin: point(x - 3, y - 3),
+                                      size: CGSize(width: rect.width / 4, height: rect.height / 4)))
+        }
+        return path
+    }
+}
+
 enum WorkbenchStyle {
     static let background = Color(red: 37 / 255, green: 38 / 255, blue: 38 / 255)
     static let sidebar = Color(red: 33 / 255, green: 33 / 255, blue: 33 / 255)

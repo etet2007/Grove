@@ -736,8 +736,10 @@ struct ContentView: View {
                             .finderContextMenu(path: worktree.path)
                         }
                     } label: {
-                        Image(systemName: "folder.badge.gearshape")
-                            .appFont(size: 11).frame(width: 24, height: 22)
+                        WorkbenchBranchSymbol()
+                            .stroke(style: StrokeStyle(lineWidth: 1.5 * AppTypography.scale(for: fontSize), lineCap: .round, lineJoin: .round))
+                            .frame(width: 14 * AppTypography.scale(for: fontSize), height: 14 * AppTypography.scale(for: fontSize))
+                            .frame(width: 24, height: 22)
                     }
                     .help("选择工作树")
                 }
