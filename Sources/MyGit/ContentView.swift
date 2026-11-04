@@ -530,9 +530,17 @@ struct ContentView: View {
         let selected = model.selectedWorktreeGroupID == group.id
         return Button { model.selectWorktreeGroup(group.id) } label: {
             HStack(spacing: 6) {
-                Image(systemName: group.isPrimary ? "arrow.triangle.branch" : "point.topleft.down.to.point.bottomright.curvepath")
-                    .appFont(size: 13)
-                    .frame(width: 16)
+                Group {
+                    if group.isPrimary {
+                        Image(systemName: "house")
+                            .appFont(size: 13)
+                    } else {
+                        WorkbenchBranchSymbol()
+                            .stroke(style: StrokeStyle(lineWidth: 1.5 * AppTypography.scale(for: fontSize), lineCap: .round, lineJoin: .round))
+                            .frame(width: 14 * AppTypography.scale(for: fontSize), height: 14 * AppTypography.scale(for: fontSize))
+                    }
+                }
+                    .frame(width: 16 * AppTypography.scale(for: fontSize))
                     .foregroundStyle(selected ? Color.white : WorkbenchStyle.muted)
                 Text(LocalizedStringKey(group.name)).lineLimit(1)
                 Spacer(minLength: 0)
