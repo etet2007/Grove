@@ -44,16 +44,24 @@ extension View {
         contextMenu { FinderMenuItem(path: path) }
     }
 
-    func fileContextMenu(path: String?, filePath: String) -> some View {
+    func fileContextMenu(path: String?, filePath: String, selectedPaths: [String]? = nil,
+                         canDiscard: Bool = false, onDiscard: (() -> Void)? = nil) -> some View {
         contextMenu {
             Button {
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString((filePath as NSString).lastPathComponent, forType: .string)
+                NSPasteboard.general.setString((selectedPaths ?? [filePath]).map { ($0 as NSString).lastPathComponent }.joined(separator: "\n"), forType: .string)
             } label: {
                 Label("复制文件名", systemImage: "doc.on.doc")
             }
             Divider()
             FinderMenuItem(path: path)
+            if let onDiscard {
+                Divider()
+                Button(role: .destructive, action: onDiscard) {
+                    Label("丢弃文件修改…", systemImage: "trash")
+                }
+                .disabled(!canDiscard)
+            }
         }
     }
 }

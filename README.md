@@ -79,8 +79,6 @@ diff 查找会在后台准备搜索内容并扫描匹配行，连续输入时合
 
 当前图标采用绿色树形 A 方案，原始候选稿保存在 `design/icon-exploration/2026-11-03-green-grove/A-vector-green.png`；`Resources/GroveIcon-source.png` 是裁去展示背景后的打包输入。`scripts/generate-icon.swift` 为其添加圆角与透明留白。修改素材后运行 `zsh scripts/generate-icon.sh`，生成 `Resources/GroveIcon.png` 和用于应用包的 `Resources/GroveIcon.icns`。
 
-应用内置多枚图标候选（来自 `design/icon-exploration/` 各轮探索稿）。在「设置 → 通用 → 应用图标」中选择，立即更新 Dock 与窗口图标并在重启后保持；选择仅影响运行中的实例，不修改应用包内图标和签名。候选 PNG 由 `zsh scripts/generate-icon-candidates.sh` 重新生成到 `Resources/AppIcons/`。
-
 文件详情将纯重命名、二进制、空文件、仅权限变化、子模块提交及符号链接目标显示为摘要；混合 diff 按文件保留文本代码并展示摘要。子模块显示前后提交号，符号链接显示前后目标。文件类型转换或同时含正文修改时保留代码 diff。文件末尾缺少换行时提供中文或英文说明。
 
 搜索、输入与下拉选择统一使用深灰平面控件：筛选栏高度 32 pt、表单输入 36 pt，随应用字号一起缩放。搜索框提供内置清除按钮；下拉以深色列表展开，支持方向键、回车确认和 Esc 取消。视觉规范见 `DESIGN.md` 的「全局控件视觉规范」。
@@ -94,6 +92,8 @@ diff 查找会在后台准备搜索内容并扫描匹配行，连续输入时合
 自动测试不调用模型服务。需要联调某个已登录的本机 Agent 时，运行 `GROVE_TEST_AGENT=codex swift test --filter CommitExecutionTests.testLiveAgentGenerationWhenExplicitlyEnabled`，可将 `codex` 换成 `claude` 或 `omp`。联调只在临时仓库生成建议，不提交。
 
 设置窗口采用侧边导航与卡片布局，默认内容尺寸 960 × 760，支持拖动边缘调整大小（最小 820 × 620），并记住窗口尺寸。Agent 可直接点击卡片选择，路径与模型配置折叠显示。
+
+「设置 → 外观」可选择应用图标：A 经典绿（默认）、B 玻璃绿、A2 柔和绿、春夏秋冬，以及 E 折纸林、F 雕塑林。点击卡片立即更新 Dock 和应用切换器，所有窗口共享选择，重启后保留；Finder 中的应用文件仍使用打包的默认图标。卡片支持方向键移动焦点、回车或空格选择、Esc 退出焦点，也可恢复默认。图标位于 `Sources/Grove/Resources/AppIcons/`，作为 Swift Package 资源随应用打包，不改写签名包。`swift scripts/generate-app-icons.swift` 可重新打包图标素材；四季素材与提示词见 `design/icon-exploration/2026-11-05-seasons/`。E/F 已按 A 的单树三节点图形重新生成，材质与提示词见 `design/icon-exploration/2026-11-05-materials/`，与 A/B/A2 一起放在「通用」组，四季单列。
 
 生成提交方案与设置中的测试生成提供实时执行详情：显示读取 diff、加载 Skill、Agent 的公开摘要与输出、方案校验和已用时间，可收起详情或关闭自动跟随。实际提交显示每笔的校验、Git hook/签名输出、步骤耗时及完成哈希；提交结果立即返回，仓库视图随后在后台刷新。日志仅保留在当前窗口内存中，输出限制大小，并隐藏常见凭据。
 
@@ -124,3 +124,5 @@ zsh scripts/prepare-update.sh 0.2.0 3 /你的/更新仓库 '更新说明'
 脚本构建并校验 App，将 `Grove.zip` 与含版本、递增 build、SHA-256 和更新说明的 `latest.json` 写入指定目录。每次发布的 build 必须大于旧版；两文件一起提交并推送到设置的分支即可。脚本不执行 Git 提交或推送，不修改源码中的版本号。建议使用独立的小仓库发布，清理其历史不会影响源码；每次检查使用全新的浅克隆，支持重写后的发布历史。安装包不要使用 Git LFS。
 
 用户确认「更新并重启」后，Grove 校验 SHA-256、应用标识、版本及当前应用的代码签名身份；退出后在原位置替换并重启，替换或打开失败会尝试恢复旧版，日志位于 `~/Library/Logs/Grove/update.log`。需要使用同一签名身份发布（本机自签名适合同机开发，对外分发使用 Developer ID 和公证），应用需位于可写目录，不能从磁盘镜像直接更新。构建产物需适合目标 Mac 的架构；当前简单格式不支持包含符号链接的安装包。工程配置不随应用包替换。Git 写操作进行中或存在其他 Grove 实例时拒绝安装。
+
+未提交文件列表支持 ⌘ 点击多选、Shift 点击连续选择。右键「复制文件名」复制所选文件名（每行一个）；「丢弃文件修改…」确认后恢复所选文件到暂存区版本，未跟踪文件会删除，已暂存内容和未选中文件保留。仅含已暂存修改或冲突的选择不能执行。确认期间文件、HEAD、分支或暂存区变化会拒绝执行；批量操作遇到失败立即停止，并列出已完成文件。

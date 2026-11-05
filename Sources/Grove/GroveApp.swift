@@ -1,6 +1,8 @@
 import SwiftUI
 
 @main struct GroveApp: App {
+    @NSApplicationDelegateAdaptor(GroveApplicationDelegate.self) private var appDelegate
+
     var body: some Scene {
         WindowGroup {
             GroveWindow()
@@ -15,6 +17,12 @@ import SwiftUI
             }
         }
 
+    }
+}
+
+final class GroveApplicationDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        AppIconController.shared.restore()
     }
 }
 

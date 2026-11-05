@@ -513,3 +513,31 @@
 "↑ / ↓ 切换文件 · Esc 关闭" = "↑ / ↓ Switch files · Esc Close";
 
 "关闭预览" = "Close Preview";
+
+// App icon preferences
+"外观" = "Appearance";
+"应用图标" = "App Icon";
+"为 Grove 选择一棵喜欢的树。" = "Choose a tree for Grove.";
+"立即更新 Dock 和应用切换器，重启后保留。" = "Updates the Dock and app switcher immediately. Remembers your choice after relaunch.";
+"Finder 中的应用文件仍使用默认图标。" = "The app file in Finder keeps the default icon.";
+"经典" = "Classics";
+"四季" = "Seasons";
+"材质" = "Materials";
+"恢复默认图标" = "Restore Default Icon";
+"经典绿" = "Classic Green";
+"玻璃绿" = "Glass Green";
+"柔和绿" = "Muted Green";
+"春 · 新芽" = "Spring · Buds";
+"夏 · 繁荫" = "Summer · Canopy";
+"秋 · 金叶" = "Autumn · Gold";
+"冬 · 霜林" = "Winter · Frost";
+"折纸林" = "Folded Grove";
+"雕塑林" = "Sculpted Grove";
+"无法加载图标，请重新构建或安装 Grove。" = "Unable to load the icon. Rebuild or reinstall Grove.";
+
+// Whole-file discard
+"丢弃文件修改…" = "Discard File Changes…";
+"丢弃所选文件修改？" = "Discard Selected File Changes?";
+"此文件不支持整文件丢弃修改：%@" = "This file does not support discarding whole-file changes: %@";
+"部分文件已丢弃，后续操作已停止。\n%@\n\n%@" = "Some files were discarded. Remaining operations stopped.\n%@\n\n%@";
+"丢弃 %ld 个文件的未暂存修改，恢复到暂存区版本。未跟踪文件将被删除，已暂存内容保留。此操作无法撤销。" = "Discard unstaged changes in %ld files and restore the index versions. Untracked files will be deleted. Staged content is preserved. This cannot be undone.";

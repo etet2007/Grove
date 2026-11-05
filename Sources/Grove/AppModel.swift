@@ -635,6 +635,33 @@ private struct MergeRequestCacheEntry {
         refresh()
     }
 
+    func discardFiles(_ request: FileDiscardRequest) async {
+        guard !isDiscarding, !isSwitchingBranch, !isCommitting, !isOperatingRemote else { return }
+        var reserved: [String] = []
+        defer { reserved.forEach { CheckoutOperationLock.release($0) } }
+        for checkout in request.checkouts {
+            guard CheckoutOperationLock.acquire(checkout.path) else {
+                error = AppLocalization.text("此 checkout 正在执行其他操作。")
+                return
+            }
+            reserved.append(checkout.path)
+        }
+        isDiscarding = true
+        refreshTask?.cancel()
+        refreshSession?.cancel()
+        refreshGeneration += 1
+        isRefreshing = false
+        allDetailStates.forEach { $0.cancelRead(); $0.generation += 1 }
+        let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+            do { try request.apply(); return nil }
+            catch { return error.localizedDescription }
+        }.value
+        if let failure { error = AppLocalization.text("丢弃修改失败：%@", failure) }
+        groupCache.removeAll()
+        isDiscarding = false
+        refresh()
+    }
+
     func selectCommit(_ commit: Commit) {
         selectedCommit = commit
         selectedFile = nil

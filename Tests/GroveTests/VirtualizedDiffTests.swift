@@ -29,6 +29,33 @@ final class VirtualizedDiffTests: XCTestCase {
         XCTAssertEqual(document.renderedRowRange, 0..<0)
     }
 
+    @MainActor func testScrollingRetainsExistingRowViews() throws {
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 420))
+        let document = VirtualizedDiffDocumentView(lines: \.old)
+        scroll.documentView = document
+        let rows = (0..<1_000).map { index in
+            DiffRow(id: index, old: DiffLine(number: index + 1, text: "line \(index)", kind: .context), new: nil)
+        }
+        document.setContent(rows: rows, width: 1_000)
+        // This visible text view must survive crossing a row boundary; rebuilding
+        // the whole column discards its native layout and selection state.
+        let retained = try XCTUnwrap(document.subviews.first { $0.frame.minY == 210 && $0.frame.height == 21 })
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 42))
+        document.updateVisibleRows()
+        XCTAssertTrue(retained.superview === document)
+        XCTAssertTrue(document.subviews.contains { $0 === retained })
+        XCTAssertLessThan(document.subviews.count, 50)
+
+        scroll.contentView.scroll(to: NSPoint(x: 100, y: 42))
+        document.updateVisibleRows()
+        XCTAssertTrue(retained.superview === document)
+
+        scroll.contentView.scroll(to: NSPoint(x: 100, y: 20_580))
+        document.updateVisibleRows()
+        XCTAssertNil(retained.superview)
+        XCTAssertLessThan(document.subviews.count, 50)
+    }
+
     @MainActor func testFontSizeChangeUpdatesScrollExtentAndVisibleRows() {
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 420))
         let document = VirtualizedDiffDocumentView(lines: \.old)

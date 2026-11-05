@@ -26,6 +26,8 @@ if [[ -n "$grove_build" ]]; then
 fi
 cp scripts/install-update.sh dist/Grove.app/Contents/Resources/install-update.sh
 cp Resources/GroveIcon.icns dist/Grove.app/Contents/Resources/GroveIcon.icns
+rm -rf dist/Grove.app/Contents/Resources/Grove_Grove.bundle
+cp -R .build/release/Grove_Grove.bundle dist/Grove.app/Contents/Resources/
 cp -R Resources/en.lproj Resources/zh-Hans.lproj dist/Grove.app/Contents/Resources/
 codesign --force --sign "$signing_identity" dist/Grove.app
 codesign --verify --strict dist/Grove.app

@@ -1,0 +1,11 @@
+MyGit green grove icon concepts — 2026-11-03
+
+Generated using the built-in image_gen tool with the two user-supplied references.
+Exact prompts: prompts.json. Provider cost was not returned.
+A-vector-green.png: simplified vector-like raster concept; not an SVG/vector file.
+B-glass-sculpted-green.png: sculpted glass concept retaining reference 1's green/ivory palette.
+comparison.png: cropped concept previews at 16, 32 and 64 px on light/dark surroundings.
+The source PNGs include a warm off-white surround and baked rounded corners.
+These are concept images, not transparent production icons or Icon Composer layers.
+Visual review: A retains a clearer three-node silhouette at 32 px; B has richer depth but denser highlights at 16 px. Both need a simplified dedicated 16 px treatment for production.
+No application resources, source code or shipping icon were replaced. Native appearance validation and packaging have not been performed.

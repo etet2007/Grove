@@ -150,6 +150,27 @@ enum WorkbenchControlSize {
     }
 }
 
+/// A variable-height choice card using the same states and tokens as form controls.
+struct WorkbenchChoiceCardStyle: ButtonStyle {
+    var isSelected = false
+    var isFocused = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: ButtonStyleConfiguration) -> some View {
+        configuration.label
+            .padding(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(WorkbenchStyle.control, in: RoundedRectangle(cornerRadius: WorkbenchStyle.controlRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: WorkbenchStyle.controlRadius)
+                    .strokeBorder(isSelected || isFocused ? WorkbenchStyle.accent.opacity(isFocused ? 1 : 0.65)
+                                  : WorkbenchStyle.controlBorder.opacity(0.7), lineWidth: isFocused ? 2 : 1)
+            }
+            .modifier(WorkbenchHoverFeedback(isPressed: configuration.isPressed, cornerRadius: WorkbenchStyle.controlRadius))
+            .opacity(isEnabled ? 1 : 0.4)
+    }
+}
+
 /// A single surface for fields and select triggers, including keyboard focus and disabled states.
 struct WorkbenchControlSurface: ViewModifier {
     var isFocused = false

@@ -9,7 +9,7 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-markdown.git", exact: "0.5.0")
     ],
     targets: [
-        .executableTarget(name: "Grove", dependencies: [.product(name: "Markdown", package: "swift-markdown")], path: "Sources/Grove"),
+        .executableTarget(name: "Grove", dependencies: [.product(name: "Markdown", package: "swift-markdown")], path: "Sources/Grove", resources: [.copy("Resources/AppIcons")]),
         .testTarget(name: "GroveTests", dependencies: ["Grove"], path: "Tests/GroveTests")
     ]
 )

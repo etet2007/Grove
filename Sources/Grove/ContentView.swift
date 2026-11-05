@@ -196,6 +196,10 @@ struct ContentView: View {
     @State private var remoteTarget: RemoteOperationTarget?
     @State private var nameInput = ""
     @State private var fileQuery = ""
+    @State private var selectedChangeIDs: Set<String> = []
+    @State private var changeSelectionAnchor: String?
+    @State private var pendingFileDiscard: FileDiscardRequest?
+    @State private var preparingFileDiscard = false
     @State private var showingFilePreview = false
     @State private var previewOrigin = DiffPreviewOrigin()
     @State private var fileFilter: FileChangeFilter = .all
@@ -955,8 +959,8 @@ struct ContentView: View {
                         } else if !snapshot.files.isEmpty {
                             LazyVStack(spacing: 2) {
                                 ForEach(snapshot.files.filter { matchesFile($0) }) { file in
-                                    Button { model.selectFile(file) } label: {
-                                        ChangedFileRow(file: file, selected: model.selectedFile?.id == file.id)
+                                    Button { selectChangedFile(file) } label: {
+                                        ChangedFileRow(file: file, selected: selectedChangeIDs.contains(file.id) || (selectedChangeIDs.isEmpty && model.selectedFile?.id == file.id))
                                     }
                                     .buttonStyle(WorkbenchHoverButtonStyle())
                                     .background(DiffPreviewAnchor(origin: previewOrigin, id: file.id))
@@ -967,7 +971,10 @@ struct ContentView: View {
                                     .id(file.id)
                                     .fileContextMenu(path: snapshot.selected.map {
                                         URL(fileURLWithPath: $0.path).appendingPathComponent(file.path).path
-                                    }, filePath: file.path)
+                                    }, filePath: file.path,
+                                       selectedPaths: changeMenuFiles(file).map(\.path),
+                                       canDiscard: canDiscardFiles(changeMenuFiles(file)),
+                                       onDiscard: { prepareFileDiscard(changeMenuFiles(file)) })
                                 }
                             }
                             .padding(.leading, 16).padding(.trailing, 6)
@@ -1008,7 +1015,69 @@ struct ContentView: View {
             }
         }
         .onChange(of: model.detailStates[0].selectedFile?.id) { _, id in
-            if id == nil { showingFilePreview = false }
+            if id == nil { showingFilePreview = false; selectedChangeIDs = []; changeSelectionAnchor = nil }
+            else if let id, !selectedChangeIDs.contains(id) { selectedChangeIDs = [id]; changeSelectionAnchor = id }
+        }
+        .onChange(of: previewFiles.map(\.id)) { _, ids in
+            selectedChangeIDs.formIntersection(ids)
+        }
+        .sheet(item: $pendingFileDiscard, onDismiss: { changesListFocused = true }) { request in
+            FileDiscardConfirmation(request: request) {
+                pendingFileDiscard = nil
+                Task { await model.discardFiles(request); changesListFocused = true }
+            }
+        }
+    }
+
+    private func selectChangedFile(_ file: ChangedFile) {
+        let flags = NSEvent.modifierFlags
+        let files = previewFiles
+        if flags.contains(.shift), let anchor = changeSelectionAnchor,
+           let start = files.firstIndex(where: { $0.id == anchor }),
+           let end = files.firstIndex(where: { $0.id == file.id }) {
+            let range = Set(files[min(start, end)...max(start, end)].map(\.id))
+            selectedChangeIDs = flags.contains(.command) ? selectedChangeIDs.union(range) : range
+        } else if flags.contains(.command) {
+            if !selectedChangeIDs.insert(file.id).inserted { selectedChangeIDs.remove(file.id) }
+            changeSelectionAnchor = file.id
+            // Keep the detail on a selected file when toggling the current row off.
+            if !selectedChangeIDs.contains(file.id) {
+                if let next = files.first(where: { selectedChangeIDs.contains($0.id) }) { model.selectFile(next) }
+                else { model.selectedFile = nil }
+                return
+            }
+        } else {
+            selectedChangeIDs = [file.id]
+            changeSelectionAnchor = file.id
+        }
+        model.selectFile(file)
+    }
+
+    private func changeMenuFiles(_ file: ChangedFile) -> [ChangedFile] {
+        selectedChangeIDs.contains(file.id) ? previewFiles.filter { selectedChangeIDs.contains($0.id) } : [file]
+    }
+
+    private func canDiscardFiles(_ files: [ChangedFile]) -> Bool {
+        !files.isEmpty && files.allSatisfy { $0.hasUnstaged && $0.changeKind != .conflict }
+            && !preparingFileDiscard && !model.isDiscarding && !model.isSwitchingBranch
+            && !model.isCommitting && !model.isOperatingRemote
+    }
+
+    private func prepareFileDiscard(_ files: [ChangedFile]) {
+        guard canDiscardFiles(files) else { return }
+        let targets = model.snapshots.compactMap { snapshot -> (checkout: String, files: [ChangedFile])? in
+            let selected = files.filter { $0.repositoryID == snapshot.repository.id }
+            guard !selected.isEmpty, let checkout = snapshot.selected?.path else { return nil }
+            return (checkout, selected)
+        }
+        guard targets.reduce(0, { $0 + $1.files.count }) == files.count else { return }
+        preparingFileDiscard = true
+        Task {
+            defer { preparingFileDiscard = false }
+            do {
+                let request = try await Task.detached(priority: .userInitiated) { try FileDiscardRequest.capture(targets) }.value
+                pendingFileDiscard = request
+            } catch { model.error = AppLocalization.text("丢弃修改失败：%@", error.localizedDescription) }
         }
     }
 
@@ -1021,6 +1090,8 @@ struct ContentView: View {
         guard !files.isEmpty else { return }
         let current = files.firstIndex { $0.id == model.detailStates[0].selectedFile?.id }
         let next = current.map { min(max(0, $0 + delta), files.count - 1) } ?? (delta > 0 ? 0 : files.count - 1)
+        selectedChangeIDs = [files[next].id]
+        changeSelectionAnchor = files[next].id
         model.selectFile(files[next])
     }
 

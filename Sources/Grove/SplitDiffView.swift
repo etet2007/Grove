@@ -173,23 +173,15 @@ private final class DiffPaneSplitView: NSSplitView {
     }
 }
 
-private struct DiffRowsColumn: View {
-    let rows: ArraySlice<DiffRow>
-    let lines: KeyPath<DiffRow, DiffLine?>
+private struct DiffTextRow: View {
+    let value: DiffLine?
     let width: CGFloat
-    var fontScale: CGFloat = 1
-    var matchingRows: Set<Int> = []
-    var selectedRow: Int?
+    let fontScale: CGFloat
+    let isMatching: Bool
+    let isSelected: Bool
     private var rowHeight: CGFloat { 21 * fontScale }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(rows) { row in line(row[keyPath: lines], rowID: row.id, width: width) }
-        }
-        .frame(width: width, height: CGFloat(rows.count) * rowHeight, alignment: .topLeading)
-    }
-
-    private func line(_ value: DiffLine?, rowID: Int, width: CGFloat) -> some View {
         HStack(spacing: 0) {
             Text(value?.number.map(String.init) ?? "")
                 .foregroundStyle(value?.kind == .removed ? Color.red : value?.kind == .added ? Color.green : Color.secondary)
@@ -203,7 +195,7 @@ private struct DiffRowsColumn: View {
         }
         .font(.system(size: 12 * fontScale, design: .monospaced))
         .frame(width: width, height: rowHeight, alignment: .leading)
-        .background(matchingRows.contains(rowID) ? Color.yellow.opacity(selectedRow == rowID ? 0.35 : 0.14) : background(for: value?.kind))
+        .background(isMatching ? Color.yellow.opacity(isSelected ? 0.35 : 0.14) : background(for: value?.kind))
     }
 
     private func background(for kind: DiffLineKind?) -> Color {
@@ -266,17 +258,14 @@ final class VirtualizedDiffDocumentView: NSView {
     private var discardTargets: DiffDiscardTargets?
     private var onDiscard: ((Set<Int>, UUID) -> Void)?
     private var contextOverlay: DiffContextMenuOverlay!
-    private let host: NSHostingView<DiffRowsColumn>
+    private var rowHosts: [Int: NSHostingView<DiffTextRow>] = [:]
     private(set) var renderedRowRange = 0..<0
 
     override var isFlipped: Bool { true }
 
     init(lines: KeyPath<DiffRow, DiffLine?>) {
         self.lines = lines
-        host = NSHostingView(rootView: DiffRowsColumn(rows: [], lines: lines, width: 0))
         super.init(frame: .zero)
-        host.sizingOptions = []
-        addSubview(host)
         contextOverlay = DiffContextMenuOverlay(document: self)
         addSubview(contextOverlay)
     }
@@ -356,9 +345,36 @@ final class VirtualizedDiffDocumentView: NSView {
         let range = first..<last
         guard force || range != renderedRowRange else { return }
         renderedRowRange = range
-        host.rootView = DiffRowsColumn(rows: rows[range], lines: lines, width: columnWidth, fontScale: fontScale, matchingRows: matchingRows, selectedRow: selectedRow)
-        host.frame = NSRect(x: 0, y: CGFloat(first) * rowHeight,
-                            width: columnWidth, height: CGFloat(range.count) * rowHeight)
+        // Keep existing selectable text views in place. Replacing a single host's
+        // entire VStack on every row boundary relayouts both columns during scroll.
+        for index in Array(rowHosts.keys) where !range.contains(index) {
+            rowHosts.removeValue(forKey: index)?.removeFromSuperview()
+        }
+        for index in range {
+            if let host = rowHosts[index] {
+                if force {
+                    host.rootView = rowView(at: index)
+                    host.frame = rowFrame(at: index)
+                }
+            } else {
+                let host = NSHostingView(rootView: rowView(at: index))
+                host.sizingOptions = []
+                host.frame = rowFrame(at: index)
+                addSubview(host, positioned: .below, relativeTo: contextOverlay)
+                rowHosts[index] = host
+            }
+        }
+    }
+
+    private func rowView(at index: Int) -> DiffTextRow {
+        let row = rows[index]
+        return DiffTextRow(value: row[keyPath: lines], width: columnWidth,
+                           fontScale: fontScale, isMatching: matchingRows.contains(row.id),
+                           isSelected: selectedRow == row.id)
+    }
+
+    private func rowFrame(at index: Int) -> NSRect {
+        NSRect(x: 0, y: CGFloat(index) * rowHeight, width: columnWidth, height: rowHeight)
     }
 }
 
