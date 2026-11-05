@@ -61,7 +61,9 @@ final class CommitBrowserTests: XCTestCase {
         model.selectBrowsingRepository(library)
         XCTAssertNil(model.selectedFile, "Filtering changes must clear details from another repository")
         model.activeTab = 1
-        XCTAssertEqual(model.browsingRepositoryID, app)
+        XCTAssertEqual(model.browsingRepositoryID, library)
+        XCTAssertEqual(model.selectedCommit, libraryCommit)
+        model.selectCommitRepository(app)
         model.loadMoreCommits()
         try await waitForRefresh(model)
         XCTAssertEqual(model.visibleCommits.count, 32)
@@ -72,8 +74,41 @@ final class CommitBrowserTests: XCTestCase {
         XCTAssertNil(model.selectedCommit)
         model.selectCommitRepository(library)
         XCTAssertEqual(model.selectedCommit, libraryCommit)
+        // File selection wins over an earlier module interaction without filtering Changes.
+        model.activeTab = 0
+        model.selectBrowsingRepository(nil)
+        model.rememberChangesRepository(app)
+        let libraryFile = try XCTUnwrap(model.snapshots.first { $0.repository.id == library }?.files.first)
+        model.selectFile(libraryFile)
+        XCTAssertNil(model.focusedRepositoryID)
+        model.activeTab = 1
+        XCTAssertEqual(model.commitRepositoryID, library)
+        XCTAssertEqual(model.selectedCommit, libraryCommit)
+
+        // Manual History navigation survives a tab round trip with no new Changes selection.
+        model.selectCommitRepository(app)
+        model.activeTab = 0
+        model.activeTab = 1
+        XCTAssertEqual(model.commitRepositoryID, app)
+        XCTAssertEqual(model.selectedCommit, appCommit)
+
+        // A module title can override the previously selected file, including a collapsed module.
+        model.activeTab = 0
+        model.rememberChangesRepository(app)
+        model.activeTab = 1
+        XCTAssertEqual(model.commitRepositoryID, app)
+        model.activeTab = 0
+        model.selectBrowsingRepository(nil)
+        model.activeTab = 1
+        XCTAssertNil(model.commitRepositoryID)
+
+        // Checkout changes discard a pending target along with the old details.
+        model.selectCommitRepository(library)
+        model.activeTab = 0
+        model.rememberChangesRepository(app)
         model.selectWorktreeGroup(group.id)
         try await waitForRefresh(model)
+        model.activeTab = 1
         XCTAssertEqual(model.commitRepositoryID, library)
         XCTAssertNil(model.selectedCommit, "Checkout selection resets all commit details")
         model.removeRepository(library)

@@ -119,11 +119,25 @@ private struct MergeRequestCacheEntry {
     var browsingRepositoryID: UUID? { activeTab == 1 ? commitRepositoryID : focusedRepositoryID }
     var visibleCommits: [Commit] { commits.filter { commitRepositoryID == nil || $0.repositoryID == commitRepositoryID } }
 
+    // Consume only new interactions in Changes, so returning to History keeps its manual scope.
+    private enum ChangesHistoryTarget {
+        case allRepositories
+        case repository(UUID)
+    }
+    private var pendingChangesHistoryTarget: ChangesHistoryTarget?
+
+    func rememberChangesRepository(_ id: UUID?) {
+        guard activeTab == 0 else { return }
+        guard id == nil || selectedProject?.repositories.contains(where: { $0.id == id }) == true else { return }
+        pendingChangesHistoryTarget = id.map(ChangesHistoryTarget.repository) ?? .allRepositories
+    }
+
     func selectBrowsingRepository(_ id: UUID?) {
         if activeTab == 1 { selectCommitRepository(id) }
         else {
             if focusedRepositoryID != id { changesState.clear() }
             focusedRepositoryID = id
+            rememberChangesRepository(id)
         }
     }
 
@@ -210,6 +224,13 @@ private struct MergeRequestCacheEntry {
     @Published var error: String?
     @Published var activeTab = 0 {
         didSet {
+            if oldValue == 0 && activeTab == 1, let target = pendingChangesHistoryTarget {
+                pendingChangesHistoryTarget = nil
+                switch target {
+                case .allRepositories: selectCommitRepository(nil)
+                case .repository(let id): selectCommitRepository(id)
+                }
+            }
             if activeTab == 0 && changesDetailNeedsRefresh {
                 changesDetailNeedsRefresh = false
                 loadDetail(showLoading: false, tab: 0)
@@ -242,6 +263,7 @@ private struct MergeRequestCacheEntry {
     }
 
     private func restoreCachedView() {
+        pendingChangesHistoryTarget = nil
         changesDetailNeedsRefresh = false
         allDetailStates.forEach { $0.clear() }
         commitScopes.forEach { $0.searchSession?.cancel(); $0.searchGeneration += 1 }
@@ -606,6 +628,7 @@ private struct MergeRequestCacheEntry {
     }
 
     func selectFile(_ file: ChangedFile) {
+        rememberChangesRepository(file.repositoryID)
         selectedFile = file
         selectedCommit = nil
         diffMode = file.hasUnstaged ? .unstaged : .staged

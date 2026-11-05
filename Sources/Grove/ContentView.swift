@@ -1118,7 +1118,6 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                 }
-                .disabled(!hasContent)
                 HStack(spacing: 6) {
                     if let selected = snapshot.selected {
                         BranchPicker(repositoryID: repositoryID, worktree: selected)
@@ -1143,7 +1142,6 @@ struct ContentView: View {
                     }
                     .appFont(size: 10).fixedSize()
                 }
-                .disabled(!hasContent)
                 HStack(spacing: 4) {
                     RepositoryRemoteActions(snapshot: snapshot) { operation in
                         remoteTarget = RemoteOperationTarget(snapshot: snapshot, operation: operation)
@@ -1170,6 +1168,7 @@ struct ContentView: View {
         .finderContextMenu(path: snapshot.selected?.path ?? snapshot.repository.path)
 
         func toggleRepository() {
+            model.rememberChangesRepository(repositoryID)
             guard hasContent else { return }
             if collapsed { collapsedChangeRepositories.remove(repositoryID) }
             else { collapsedChangeRepositories.insert(repositoryID) }
