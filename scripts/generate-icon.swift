@@ -3,8 +3,8 @@ import CoreGraphics
 import Foundation
 
 // Preserve the selected AI artwork; only apply the legacy macOS tile mask and padding.
-let output = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? "Resources/MyGitIcon.png")
-let sourceURL = URL(fileURLWithPath: "Resources/MyGitIcon-source.png")
+let output = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? "Resources/GroveIcon.png")
+let sourceURL = URL(fileURLWithPath: "Resources/GroveIcon-source.png")
 guard let source = NSImage(contentsOf: sourceURL),
       let sourceImage = source.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
     fatalError("Unable to read icon artwork: \(sourceURL.path)")

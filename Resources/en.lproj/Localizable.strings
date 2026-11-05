@@ -507,3 +507,9 @@
 "上次更新未完成，已尝试保留或恢复旧版。详情见 ~/Library/Logs/MyGit/update.log。" = "The previous update did not finish. Grove attempted to preserve or restore the old version. See ~/Library/Logs/MyGit/update.log.";
 "正在加载…" = "Loading…";
 "无法读取工作树 HEAD：%@。请刷新后重试。" = "Cannot read worktree HEAD: %@. Refresh to retry.";
+
+"Diff 预览" = "Diff Preview";
+
+"↑ / ↓ 切换文件 · Esc 关闭" = "↑ / ↓ Switch files · Esc Close";
+
+"关闭预览" = "Close Preview";

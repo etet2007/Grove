@@ -1,5 +1,5 @@
 #!/bin/sh
-# Invoked only after explicit confirmation and signature verification by MyGit.
+# Invoked only after explicit confirmation and signature verification by Grove.
 set -eu
 parent_pid=$1
 source_app=$2

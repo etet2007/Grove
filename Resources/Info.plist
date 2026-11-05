@@ -5,8 +5,8 @@
     <key>CFBundleName</key><string>Grove</string>
     <key>CFBundleDisplayName</key><string>Grove</string>
     <key>CFBundleIdentifier</key><string>dev.stephenlau.mygit</string>
-    <key>CFBundleExecutable</key><string>MyGit</string>
-    <key>CFBundleIconFile</key><string>MyGitIcon</string>
+    <key>CFBundleExecutable</key><string>Grove</string>
+    <key>CFBundleIconFile</key><string>GroveIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleLocalizations</key>
     <array><string>en</string><string>zh-Hans</string></array>

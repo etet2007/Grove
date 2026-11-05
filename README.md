@@ -1,14 +1,16 @@
-# MyGit
+# Grove
 
-MyGit 是一个原生 macOS Git 客户端，用于快速浏览同一工程内多个仓库、多个 worktree 的未提交 diff 和本地提交记录。
+Grove 是一个原生 macOS Git 客户端，用于快速浏览同一工程内多个仓库、多个 worktree 的未提交 diff 和本地提交记录。
 
 ## 运行
 
-需要 macOS 14 或更新版本，以及 Xcode 命令行工具。运行 `zsh scripts/build-app.sh` 后，双击 `dist/MyGit.app`。
+需要 macOS 14 或更新版本，以及 Xcode 命令行工具。运行 `zsh scripts/build-app.sh` 后，双击 `dist/Grove.app`。
 
-应用图标原始素材为 `Resources/MyGitIcon-source.png`。运行 `zsh scripts/generate-icon.sh` 可重新生成带 macOS 圆角及透明留白的 PNG 和多尺寸 ICNS，再构建应用即可使用。
+产品、Swift 包、可执行文件、图标资源和源码目录已统一为 Grove（`Sources/Grove`、`Tests/GroveTests`）。为保留已有工程、偏好设置及更新签名，Bundle ID 仍为 `dev.stephenlau.mygit`，配置仍位于 `~/Library/Application Support/MyGit/config.json`，设置窗口的历史位置键和本机 `MyGit Local Code Signing` 证书也继续沿用。构建优先读取 `GROVE_SIGNING_IDENTITY`、`GROVE_VERSION`、`GROVE_BUILD`，同时兼容对应的旧 `MYGIT_*` 构建变量。
 
-构建脚本默认使用登录钥匙串中的 `MyGit Local Code Signing` 证书签名，不再使用每次改动后身份都会变化的临时签名。首次在本机配置时，可以在「钥匙串访问」的「证书助理 → 创建证书」中创建同名的「自签名根证书」，证书类型选「代码签名」。如果已有其他代码签名证书，可运行 `MYGIT_SIGNING_IDENTITY="证书名称" zsh scripts/build-app.sh`。自签名证书仅用于本机开发；向其他人分发时应使用 Developer ID 签名。
+应用图标原始素材为 `Resources/GroveIcon-source.png`。运行 `zsh scripts/generate-icon.sh` 可重新生成带 macOS 圆角及透明留白的 PNG 和多尺寸 ICNS，再构建应用即可使用。
+
+构建脚本默认使用登录钥匙串中的 `MyGit Local Code Signing` 证书签名，不再使用每次改动后身份都会变化的临时签名。首次在本机配置时，可以在「钥匙串访问」的「证书助理 → 创建证书」中创建同名的「自签名根证书」，证书类型选「代码签名」。如果已有其他代码签名证书，可运行 `GROVE_SIGNING_IDENTITY="证书名称" zsh scripts/build-app.sh`。自签名证书仅用于本机开发；向其他人分发时应使用 Developer ID 签名。
 
 首次使用：
 
@@ -27,7 +29,7 @@ MyGit 是一个原生 macOS Git 客户端，用于快速浏览同一工程内多
 
 `⌘K` 打开快速切换，`⌘R` 刷新。Mac 的「工作树」菜单也提供切换入口。窗口回到前台时立即刷新，在前台期间每 10 秒自动刷新一次，退到后台后停止定时刷新；也可用 `⌘R` 手动刷新。刷新尚未完成时跳过下一次自动刷新。前台也监听文件变化，合并连续保存事件后只更新受影响的 checkout；自动刷新复用 HEAD 未变化的提交记录和未失效的 MR 链接。当前浏览的额外 checkout 被外部操作切换分支或切到 detached HEAD 时，保留该工作树组和原目录，并保存单仓库选择；选中的 detached 工作树重新关联分支时也保留当前组。工作树读取失败时保留上次目录信息并显示错误，等待后续刷新恢复，不据此改用主目录。切回最近浏览过的工作树组时，先立即显示内存中的修改列表和提交记录，再在后台更新；首次打开仍需读取 Git。缓存最多保留 12 套浏览结果，退出应用后清空。手动刷新会重新读取本地 Git 数据。配置保存在 `~/Library/Application Support/MyGit/config.json`。
 
-从菜单栏「MyGit → 设置…」（`⌘,`）进入 General，可将应用字体大小设为 10–18 pt，默认 12 pt。侧边栏、列表和 diff 会立即更新，所有窗口共享字号，重启后保留。General 也可选择简体中文或 English；语言修改在重启应用后生效，包含原生菜单。
+从菜单栏「Grove → 设置…」（`⌘,`）进入 General，可将应用字体大小设为 10–18 pt，默认 12 pt。侧边栏、列表和 diff 会立即更新，所有窗口共享字号，重启后保留。General 也可选择简体中文或 English；语言修改在重启应用后生效，包含原生菜单。
 
 工程可从窗口标题栏的工程菜单切换。通过「文件 → 新建窗口」打开多个窗口后，各窗口可以独立选择工程和工作树组。
 
@@ -42,6 +44,8 @@ MyGit 是一个原生 macOS Git 客户端，用于快速浏览同一工程内多
 单仓库提交记录左侧显示彩色历史图：圆点表示普通提交，方点表示合并提交，连线表示父提交关系。历史图仅包含当前 checkout 的 HEAD 可达历史，按拓扑顺序排列（子提交在父提交前），支持加载更早提交；底部延伸线表示尚未加载的父提交。颜色用于区分轨道，不绑定分支名。鼠标悬停在具体的彩色线段或提交节点上时，显示该轨道关联的本地分支名；顶部和提交旁不常驻分支标签。没有可用分支标签时，悬停提示“历史线”及原因，不猜测已删除分支的名称；刷新时重新读取本地分支引用，即使 HEAD 未变也会更新标签。「全部仓库」继续按时间合并记录，不显示跨仓库连线。
 
 提交详情默认显示文件列表和单文件 diff；点击文件或使用上下箭头切换，列表显示修改类型和增删行数。拖动文件列表与下方详情之间的横向分隔线，可上下调整两块区域的高度；文件列表仍可独立滚动。「查看全部」可连续浏览整个提交。整文件新增或删除用单栏显示；diff 按可见行渲染。
+
+未提交修改和提交记录的文件列表支持长按文件行（约 0.5 秒）打开放大 diff 预览（占满当前屏幕可用区域，保留菜单栏和 Dock，不进入 macOS 全屏空间）；列表获得焦点后，也可按空格打开所选文件。展开时从文件行放大，关闭时收回；动画使用静态画面过渡，避免逐帧重新布局 diff，系统启用“减少动态效果”时改用短淡入淡出。预览保留滚动、并排及统一 diff，使用 ↑ / ↓ 或顶部按钮切换文件，首尾不循环；未提交修改遵循当前筛选及展开的文件顺序，提交记录仅在当前提交内切换。Esc、空格或关闭按钮关闭预览并将焦点归还文件列表，主界面跟随保留最后所选文件。
 
 并排 diff 中，拖动两栏之间的竖向分隔线可调整左右宽度；向左拖动可加宽右侧工作区。标题和代码内容一起调整，左右滚动仍保持同步。
 
@@ -69,11 +73,13 @@ diff 查找会在后台准备搜索内容并扫描匹配行，连续输入时合
 
 运行 `swift test`。测试使用临时 Git 仓库，不修改已有项目。
 
-`MYGIT_SEARCH_BENCHMARK=1 swift test --filter DiffSearchTests` 可测量 5 万行内容中修改查询文本的主线程同步耗时；这衡量输入是否阻塞界面，不代表搜索结果完成时间。该耗时测试默认跳过，取消和结果一致性测试始终运行。
+`GROVE_SEARCH_BENCHMARK=1 swift test --filter DiffSearchTests` 可测量 5 万行内容中修改查询文本的主线程同步耗时；这衡量输入是否阻塞界面，不代表搜索结果完成时间。该耗时测试默认跳过，取消和结果一致性测试始终运行。
 
-窗口缩放性能可在机器空闲时运行 `MYGIT_RESIZE_BENCHMARK=1 swift test --filter WindowResizePerformanceTests`。测试使用临时配置和合成的 1,000 行 diff，自动调整完整窗口尺寸，输出布局与绘制的中位耗时及 P95，以 16.7 ms 检查 60 Hz 帧预算；默认跳过，避免机器负载造成普通测试误报。另可运行 `MYGIT_RESIZE_BENCHMARK=1 swift test --filter RetainedPaneTests`，测量访问过 6 个仓库详情后隐藏页面对缩放的影响，并验证切回后的滚动位置。该测量不等同于真实拖动帧率，仍需手动检查连续拖动、全屏切换及分栏宽度。
+窗口缩放性能可在机器空闲时运行 `GROVE_RESIZE_BENCHMARK=1 swift test --filter WindowResizePerformanceTests`。测试使用临时配置和合成的 1,000 行 diff，自动调整完整窗口尺寸，输出布局与绘制的中位耗时及 P95，以 16.7 ms 检查 60 Hz 帧预算；默认跳过，避免机器负载造成普通测试误报。另可运行 `GROVE_RESIZE_BENCHMARK=1 swift test --filter RetainedPaneTests`，测量访问过 6 个仓库详情后隐藏页面对缩放的影响，并验证切回后的滚动位置。该测量不等同于真实拖动帧率，仍需手动检查连续拖动、全屏切换及分栏宽度。
 
-图标源文件为 `scripts/generate-icon.swift`。修改后运行 `zsh scripts/generate-icon.sh`，生成 `Resources/MyGitIcon.png` 和用于应用包的 `Resources/MyGitIcon.icns`。
+当前图标采用绿色树形 A 方案，原始候选稿保存在 `design/icon-exploration/2026-11-03-green-grove/A-vector-green.png`；`Resources/GroveIcon-source.png` 是裁去展示背景后的打包输入。`scripts/generate-icon.swift` 为其添加圆角与透明留白。修改素材后运行 `zsh scripts/generate-icon.sh`，生成 `Resources/GroveIcon.png` 和用于应用包的 `Resources/GroveIcon.icns`。
+
+应用内置多枚图标候选（来自 `design/icon-exploration/` 各轮探索稿）。在「设置 → 通用 → 应用图标」中选择，立即更新 Dock 与窗口图标并在重启后保持；选择仅影响运行中的实例，不修改应用包内图标和签名。候选 PNG 由 `zsh scripts/generate-icon-candidates.sh` 重新生成到 `Resources/AppIcons/`。
 
 文件详情将纯重命名、二进制、空文件、仅权限变化、子模块提交及符号链接目标显示为摘要；混合 diff 按文件保留文本代码并展示摘要。子模块显示前后提交号，符号链接显示前后目标。文件类型转换或同时含正文修改时保留代码 diff。文件末尾缺少换行时提供中文或英文说明。
 
@@ -81,17 +87,17 @@ diff 查找会在后台准备搜索内容并扫描匹配行，连续输入时合
 
 ## Agent 辅助提交
 
-在「MyGit → 设置… → 提交」中选择本机 Agent（Codex、Claude Code 或 OMP）和提交 Skill。应用自动检测常见安装路径；也可手动指定可执行文件并测试生成。「路径与模型」可指定模型，留空时沿用 Agent 默认配置。若检测到本机 `commit-message/SKILL.md`，点击「使用此 Skill」即可，之后每次准备提交，Agent 都会读取所选 Skill 和它引用的规范。Agent 使用已有登录和模型配置，分析内容可能由其模型服务处理。
+在「Grove → 设置… → 提交」中选择本机 Agent（Codex、Claude Code 或 OMP）和提交 Skill。应用自动检测常见安装路径；也可手动指定可执行文件并测试生成。「路径与模型」可指定模型，留空时沿用 Agent 默认配置。若检测到本机 `commit-message/SKILL.md`，点击「使用此 Skill」即可，之后每次准备提交，Agent 都会读取所选 Skill 和它引用的规范。Agent 使用已有登录和模型配置，分析内容可能由其模型服务处理。
 
 在未提交修改的仓库标题点击「准备提交…」，核对 checkout 路径及分支，选择已暂存或全部修改，生成提交方案。可以编辑每笔说明、查看 diff、移动文件、保留文件或合并方案。第一版按完整文件拆分。确认后顺序创建本地提交，保留未选中暂存与工作文件；不绕过 hook 或签名，不自动推送。状态变化时需要重新生成；部分失败显示已产生的提交哈希，停止后续操作。
 
-自动测试不调用模型服务。需要联调某个已登录的本机 Agent 时，运行 `MYGIT_TEST_AGENT=codex swift test --filter CommitExecutionTests.testLiveAgentGenerationWhenExplicitlyEnabled`，可将 `codex` 换成 `claude` 或 `omp`。联调只在临时仓库生成建议，不提交。
+自动测试不调用模型服务。需要联调某个已登录的本机 Agent 时，运行 `GROVE_TEST_AGENT=codex swift test --filter CommitExecutionTests.testLiveAgentGenerationWhenExplicitlyEnabled`，可将 `codex` 换成 `claude` 或 `omp`。联调只在临时仓库生成建议，不提交。
 
 设置窗口采用侧边导航与卡片布局，默认内容尺寸 960 × 760，支持拖动边缘调整大小（最小 820 × 620），并记住窗口尺寸。Agent 可直接点击卡片选择，路径与模型配置折叠显示。
 
 生成提交方案与设置中的测试生成提供实时执行详情：显示读取 diff、加载 Skill、Agent 的公开摘要与输出、方案校验和已用时间，可收起详情或关闭自动跟随。实际提交显示每笔的校验、Git hook/签名输出、步骤耗时及完成哈希；提交结果立即返回，仓库视图随后在后台刷新。日志仅保留在当前窗口内存中，输出限制大小，并隐藏常见凭据。
 
-准备提交时，Agent 直接在所选 checkout 中只读分析 `git status`、diff、相关源文件、仓库规则和提交历史，并自行加载所选 Skill。MyGit 的提示词只提供范围与文件清单，不包含完整 diff；已移除 400 KB diff 与大文件指纹上限。MyGit 仍保存完整 diff 用于审阅和执行前核对。Codex 使用其原生 read-only 沙箱；Claude Code/OMP 使用受限读取工具并在系统层保护 checkout、共享 Git 元数据和所选 Skill 文件。实时详情显示实际读取命令与文件。
+准备提交时，Agent 直接在所选 checkout 中只读分析 `git status`、diff、相关源文件、仓库规则和提交历史，并自行加载所选 Skill。Grove 的提示词只提供范围与文件清单，不包含完整 diff；已移除 400 KB diff 与大文件指纹上限。Grove 仍保存完整 diff 用于审阅和执行前核对。Codex 使用其原生 read-only 沙箱；Claude Code/OMP 使用受限读取工具并在系统层保护 checkout、共享 Git 元数据和所选 Skill 文件。实时详情显示实际读取命令与文件。
 
 ## 远端操作
 
@@ -107,7 +113,7 @@ Pull/Push 图标随本地 upstream 状态更新：待拉取/推送时显示蓝�
 
 发布操作和后续交接见 [更新发布操作记录](docs/releasing.md)。后续可直接让 Agent 按此记录发布新版。
 
-设置 → 应用更新中填写更新仓库的 HTTPS / SSH 克隆地址和发布分支（默认 `main`），点击「检查更新」。仓库根目录固定放置 `latest.json`、`MyGit.zip`，无需 Releases 或额外服务器。检查时在独立临时目录浅克隆最新一版，会下载该版本的安装包；不会修改工程仓库，不自动检查、不推送。私有仓库沿用本机 Git 认证，需先在终端完成认证和 SSH 主机信任，不提供交互登录。
+设置 → 应用更新中填写更新仓库的 HTTPS / SSH 克隆地址和发布分支（默认 `main`），点击「检查更新」。仓库根目录固定放置 `latest.json`、`Grove.zip`，无需 Releases 或额外服务器。检查时在独立临时目录浅克隆最新一版，会下载该版本的安装包；不会修改工程仓库，不自动检查、不推送。私有仓库沿用本机 Git 认证，需先在终端完成认证和 SSH 主机信任，不提供交互登录。
 
 发布示例（需 Python 3，构建签名证书沿用现有配置）：
 
@@ -115,6 +121,6 @@ Pull/Push 图标随本地 upstream 状态更新：待拉取/推送时显示蓝�
 zsh scripts/prepare-update.sh 0.2.0 3 /你的/更新仓库 '更新说明'
 ```
 
-脚本构建并校验 App，将 `MyGit.zip` 与含版本、递增 build、SHA-256 和更新说明的 `latest.json` 写入指定目录。每次发布的 build 必须大于旧版；两文件一起提交并推送到设置的分支即可。脚本不执行 Git 提交或推送，不修改源码中的版本号。建议使用独立的小仓库发布，清理其历史不会影响源码；每次检查使用全新的浅克隆，支持重写后的发布历史。安装包不要使用 Git LFS。
+脚本构建并校验 App，将 `Grove.zip` 与含版本、递增 build、SHA-256 和更新说明的 `latest.json` 写入指定目录。每次发布的 build 必须大于旧版；两文件一起提交并推送到设置的分支即可。脚本不执行 Git 提交或推送，不修改源码中的版本号。建议使用独立的小仓库发布，清理其历史不会影响源码；每次检查使用全新的浅克隆，支持重写后的发布历史。安装包不要使用 Git LFS。
 
-用户确认「更新并重启」后，MyGit 校验 SHA-256、应用标识、版本及当前应用的代码签名身份；退出后在原位置替换并重启，替换或打开失败会尝试恢复旧版，日志位于 `~/Library/Logs/MyGit/update.log`。需要使用同一签名身份发布（本机自签名适合同机开发，对外分发使用 Developer ID 和公证），应用需位于可写目录，不能从磁盘镜像直接更新。构建产物需适合目标 Mac 的架构；当前简单格式不支持包含符号链接的安装包。工程配置不随应用包替换。Git 写操作进行中或存在其他 MyGit 实例时拒绝安装。
+用户确认「更新并重启」后，Grove 校验 SHA-256、应用标识、版本及当前应用的代码签名身份；退出后在原位置替换并重启，替换或打开失败会尝试恢复旧版，日志位于 `~/Library/Logs/Grove/update.log`。需要使用同一签名身份发布（本机自签名适合同机开发，对外分发使用 Developer ID 和公证），应用需位于可写目录，不能从磁盘镜像直接更新。构建产物需适合目标 Mac 的架构；当前简单格式不支持包含符号链接的安装包。工程配置不随应用包替换。Git 写操作进行中或存在其他 Grove 实例时拒绝安装。
