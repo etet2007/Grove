@@ -1250,6 +1250,7 @@ struct ContentView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(displayedCommits) { commit in
+                        let isSelected = scope.detail.selectedCommit == commit
                         Button { model.selectCommit(commit) } label: {
                             HStack(spacing: 8) {
                                 if let graph, let row = graphRows[commit.id] {
@@ -1258,14 +1259,15 @@ struct ContentView: View {
                                 }
                                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                                     Text(commit.subject)
-                                        .appFont(size: 12, weight: scope.detail.selectedCommit == commit ? .semibold : .medium)
+                                        .appFont(size: 12, weight: isSelected ? .semibold : .medium)
+                                        .foregroundStyle(isSelected ? Color.white : Color.primary)
                                         .lineLimit(1).truncationMode(.tail)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .help(commit.subject)
                                     if scope.repositoryID == nil {
                                         let repositoryName = model.selectedProject?.repositories.first(where: { $0.id == commit.repositoryID })?.name ?? AppLocalization.text("仓库")
                                         Text(repositoryName)
-                                            .appFont(size: 10).foregroundStyle(WorkbenchStyle.muted)
+                                            .appFont(size: 10).foregroundStyle(isSelected ? Color.white.opacity(0.85) : WorkbenchStyle.muted)
                                             .lineLimit(1).truncationMode(.middle)
                                             .padding(.horizontal, 5).padding(.vertical, 2)
                                             .frame(width: min(90 * AppTypography.scale(for: fontSize), geometry.size.width * 0.15))
@@ -1275,29 +1277,31 @@ struct ContentView: View {
                                     if geometry.size.width >= 480 * AppTypography.scale(for: fontSize) {
                                         Text(commit.committer)
                                             .appFont(size: 11)
-                                            .foregroundStyle(WorkbenchStyle.committerColor(commit.committer))
+                                            .foregroundStyle(isSelected ? Color.white : WorkbenchStyle.committerColor(commit.committer))
                                             .lineLimit(1).truncationMode(.tail)
                                             .frame(width: min(90 * AppTypography.scale(for: fontSize), geometry.size.width * 0.17), alignment: .leading)
                                             .help(commit.committer)
                                         Text(commit.formattedDate)
                                             .appFont(size: 10, design: .monospaced)
-                                            .foregroundStyle(WorkbenchStyle.muted)
+                                            .foregroundStyle(isSelected ? Color.white.opacity(0.85) : WorkbenchStyle.muted)
                                             .lineLimit(1).truncationMode(.tail)
                                             .frame(width: min(125 * AppTypography.scale(for: fontSize), geometry.size.width * 0.25), alignment: .leading)
                                             .help(commit.formattedDate)
                                     }
                                     Text(commit.hash.prefix(7))
                                         .appFont(size: 10, design: .monospaced)
-                                        .foregroundStyle(WorkbenchStyle.muted)
+                                        .foregroundStyle(isSelected ? Color.white.opacity(0.85) : WorkbenchStyle.muted)
                                         .fixedSize()
                                         .help(commit.hash)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .help("\(commit.subject)\n\(commit.committer) · \(commit.formattedDate)\n\(commit.hash)")
                             }
+                            // Search hides the graph, but must preserve the same row rhythm.
+                            .frame(minHeight: 30 * scale)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(WorkbenchRowButtonStyle(isSelected: scope.detail.selectedCommit == commit, verticalPadding: scope.repositoryID == nil ? 5 : 0))
+                        .buttonStyle(WorkbenchRowButtonStyle(isSelected: isSelected, verticalPadding: 0))
                         .id(commit.id)
                     }
                     let failures = model.historyErrors.filter { scope.repositoryID == nil || $0.key == scope.repositoryID }
