@@ -19,7 +19,7 @@ struct AppIconSettingsView: View {
                         artwork(controller.selected, size: 64 * scale)
                         VStack(alignment: .leading, spacing: 6) {
                             Text(LocalizedStringKey(controller.selected.title)).appFont(size: 16, weight: .semibold)
-                            Text("立即更新 Dock 和应用切换器，重启后保留。")
+                            Text("立即更新 Dock 和应用切换器，退出后 Dock 仍保留所选图标。")
                                 .appFont(size: 12).foregroundStyle(.secondary)
                             Text("Finder 中的应用文件仍使用默认图标。")
                                 .appFont(size: 11).foregroundStyle(.secondary)
@@ -120,7 +120,7 @@ struct AppIconSettingsView: View {
     }
 
     @ViewBuilder private func artwork(_ icon: AppIcon, size: CGFloat) -> some View {
-        if let image = icon.image {
+        if let image = icon.dockImage {
             Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
                 .frame(width: size, height: size).accessibilityHidden(true)
         } else {

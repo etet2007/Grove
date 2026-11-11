@@ -28,7 +28,17 @@ cp scripts/install-update.sh dist/Grove.app/Contents/Resources/install-update.sh
 cp Resources/GroveIcon.icns dist/Grove.app/Contents/Resources/GroveIcon.icns
 rm -rf dist/Grove.app/Contents/Resources/Grove_Grove.bundle
 cp -R .build/release/Grove_Grove.bundle dist/Grove.app/Contents/Resources/
+swift scripts/render-system-app-icons.swift dist/Grove.app/Contents/Resources/Grove_Grove.bundle
+swift scripts/verify-app-icons.swift dist/Grove.app
 cp -R Resources/en.lproj Resources/zh-Hans.lproj dist/Grove.app/Contents/Resources/
+# Sign nested code before the enclosing application. The Dock loads this plug-in
+# to retain the selected icon after Grove quits.
+plugin="dist/Grove.app/Contents/PlugIns/GroveDockTile.docktileplugin"
+mkdir -p "$plugin/Contents/MacOS"
+xcrun clang -bundle -fobjc-arc -mmacosx-version-min=14.0 -framework AppKit \
+    Sources/GroveDockTile/GroveDockTilePlugin.m -o "$plugin/Contents/MacOS/GroveDockTile"
+cp Resources/GroveDockTile-Info.plist "$plugin/Contents/Info.plist"
+codesign --force --sign "$signing_identity" "$plugin"
 codesign --force --sign "$signing_identity" dist/Grove.app
-codesign --verify --strict dist/Grove.app
+codesign --verify --deep --strict dist/Grove.app
 echo "Built: $PWD/dist/Grove.app"

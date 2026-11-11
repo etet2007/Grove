@@ -3,6 +3,39 @@ import XCTest
 @testable import Grove
 
 final class AppIconTests: XCTestCase {
+    @MainActor func testDefaultIconRestoresSystemImageAfterAlternateSelection() throws {
+        let suite = "GroveSystemIconTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let image = NSImage(size: NSSize(width: 32, height: 32))
+        var restoredSystemImage: [Bool] = []
+        let controller = AppIconController(defaults: defaults, loadImage: { _ in image },
+            applyImage: { restoredSystemImage.append($0 == nil) })
+        controller.restore()
+        controller.select(.glassGreen)
+        controller.select(.vectorGreen)
+        XCTAssertEqual(restoredSystemImage, [true, false, true])
+        XCTAssertEqual(AppIcon.saved(in: defaults), .vectorGreen)
+    }
+
+    @MainActor func testDockNotificationSeesSavedSelectionAndMissingArtworkDoesNotPublish() throws {
+        let suite = "GroveDockIconTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let image = NSImage(size: NSSize(width: 32, height: 32))
+        var published: [AppIcon] = []
+        let controller = AppIconController(defaults: defaults,
+            loadImage: { $0 == .winter ? nil : image }, applyImage: { _ in },
+            publishSelection: { published.append(AppIcon.saved(in: defaults)) })
+        controller.select(.sculpted)
+        controller.select(.winter)
+        controller.select(.vectorGreen)
+        XCTAssertEqual(published, [.sculpted, .vectorGreen])
+        controller.restore()
+        XCTAssertEqual(published, [.sculpted, .vectorGreen, .vectorGreen],
+                       "Launching a replacement app must refresh the Dock plug-in")
+    }
+
     @MainActor func testSelectionRestoresOnRelaunchAndRejectsMissingArtwork() throws {
         let suite = "GroveIconTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

@@ -45,25 +45,53 @@ enum AppIcon: String, CaseIterable, Identifiable {
         return image
     }
 
+    var dockImage: NSImage? {
+        let key = "dock-\(rawValue)" as NSString
+        if let cached = Self.images.object(forKey: key) { return cached }
+        if self == .vectorGreen, Bundle.main.bundleURL.pathExtension == "app" {
+            // The default selection clears applicationIconImage. Its settings
+            // preview must also use the system's bundle icon, not the raw PNG.
+            let systemIcon = NSWorkspace.shared.icon(forFile: Bundle.main.bundleURL.path)
+            Self.images.setObject(systemIcon, forKey: key)
+            return systemIcon
+        }
+        guard let url = Bundle.module.url(forResource: rawValue, withExtension: "jp2", subdirectory: "SystemAppIcons") else {
+            return image // SwiftPM development runs have no packaged system renders.
+        }
+        guard let rendered = NSImage(contentsOf: url) else { return nil }
+        Self.images.setObject(rendered, forKey: key)
+        return rendered
+    }
+
     static func saved(in defaults: UserDefaults = .standard) -> AppIcon {
         defaults.string(forKey: preferenceKey).flatMap(Self.init(rawValue:)) ?? .vectorGreen
     }
 }
 
 @MainActor final class AppIconController: ObservableObject {
-    static let shared = AppIconController()
+    static let shared = AppIconController(publishSelection: {
+        // The Dock plug-in reads a different process's preferences. Flush the
+        // selected value before telling it to reload, including immediately at quit.
+        UserDefaults.standard.synchronize()
+        DistributedNotificationCenter.default().postNotificationName(
+            NSNotification.Name("dev.stephenlau.mygit.appIconChanged"), object: nil,
+            userInfo: nil, deliverImmediately: true)
+    })
     @Published private(set) var selected: AppIcon
     @Published private(set) var errorMessage: String?
     private let defaults: UserDefaults
     private let loadImage: (AppIcon) -> NSImage?
-    private let applyImage: @MainActor (NSImage) -> Void
+    private let applyImage: @MainActor (NSImage?) -> Void
+    private let publishSelection: () -> Void
 
     init(defaults: UserDefaults = .standard,
-         loadImage: @escaping (AppIcon) -> NSImage? = { $0.image },
-         applyImage: @escaping @MainActor (NSImage) -> Void = { NSApplication.shared.applicationIconImage = $0 }) {
+         loadImage: @escaping (AppIcon) -> NSImage? = { $0.dockImage },
+         applyImage: @escaping @MainActor (NSImage?) -> Void = { NSApplication.shared.applicationIconImage = $0 },
+         publishSelection: @escaping () -> Void = {}) {
         self.defaults = defaults
         self.loadImage = loadImage
         self.applyImage = applyImage
+        self.publishSelection = publishSelection
         selected = AppIcon.saved(in: defaults)
     }
 
@@ -74,8 +102,11 @@ enum AppIcon: String, CaseIterable, Identifiable {
             errorMessage = AppLocalization.text("无法加载图标，请重新构建或安装 Grove。")
             return
         }
-        applyImage(image)
+        // nil restores the bundle icon through AppKit's standard rendering path.
+        // Even an identical PNG would otherwise override the system-provided icon.
+        applyImage(icon == .vectorGreen ? nil : image)
         defaults.set(icon.rawValue, forKey: AppIcon.preferenceKey)
+        publishSelection()
         selected = icon
         errorMessage = nil
     }
