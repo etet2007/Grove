@@ -26,6 +26,7 @@ if [[ -n "$grove_build" ]]; then
 fi
 cp scripts/install-update.sh dist/Grove.app/Contents/Resources/install-update.sh
 cp Resources/GroveIcon.icns dist/Grove.app/Contents/Resources/GroveIcon.icns
+cp Resources/ThirdPartyNotices.txt dist/Grove.app/Contents/Resources/ThirdPartyNotices.txt
 rm -rf dist/Grove.app/Contents/Resources/Grove_Grove.bundle
 cp -R .build/release/Grove_Grove.bundle dist/Grove.app/Contents/Resources/
 swift scripts/render-system-app-icons.swift dist/Grove.app/Contents/Resources/Grove_Grove.bundle

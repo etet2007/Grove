@@ -14,7 +14,9 @@
 - 正式源码仓库：[etet2007/Grove](https://github.com/etet2007/Grove)，默认分支 `main`。
 - 产品主页：[Grove](https://etet2007.github.io/Grove/)，由 `.github/workflows/pages.yml` 发布，维护方法见 [GitHub Pages 主页](github-pages.md)。
 - 2026-11-16：首次公开发布源码、中英文 README 与产品主页；未发布 App 安装包。
-- 源码与主页的公开发布不等同于 App 更新包发布；独立更新仓库尚未确定，不能将源码仓库自动作为应用更新源。
+- 2026-11-16：用户明确选择先免费发布未公证的 Preview。`v0.1.2` / build `3` 使用已有本机自签名身份，在 GitHub Releases 标为 prerelease；页面、README 和安装说明必须同时标注未公证及首次打开步骤。此例外仅适用于明确标注的 Preview；正式分发仍使用 Developer ID 签名与公证。
+- Preview 下载发布到源码仓库的 GitHub Releases，ZIP 按版本和架构命名，附 `SHA256SUMS.txt`；安装步骤见 [安装指南](install.md)。
+- 源码、主页及 Releases 手动下载不等同于应用内更新源；独立更新仓库尚未确定，不能将源码仓库自动作为应用更新源。
 
 ## 每次发布
 
@@ -54,3 +56,9 @@
 2026-11-03：完成 Grove 全链路更名，保留绿色树形 A 图标。160 项测试，5 项按配置跳过、零失败；临时仓库验证新旧 ZIP 名称、新旧 App/可执行文件及混合包拒绝。`prepare-update.sh` 实际生成本地 `dist/Grove.app`、`dist/Grove.zip`、`dist/latest.json`，校验版本一致性、SHA-256、签名及旧应用指定签名要求；包内无旧名称的可执行文件或图标资源。构建使用干净暂存目录，校验后替换产物，避免残留旧资源。已启动本次 `dist/Grove.app`，确认原工程、语言和字号设置保留，设置窗口显示 Grove。此次为本地重新打包，版本仍为 `0.1.1 (2)`，未发布到正式远端；后续正式发布仍须递增版本与 build。此次只检查更名后的启动和设置展示，未重跑控件的完整鼠标、键盘和字号布局验收。
 
 2026-10-23：本地临时更新仓库完成 `0.1.0 (1) → 0.1.1 (2)` 的实际检查、校验、替换与重启，工程配置保留；再次检查显示已是最新版本。138 项测试，1 项跳过、零失败，构建和签名验证通过；已检查取消确认、窄窗口、18 pt 字号及地址输入清空。测试地址已从应用配置清空，尚未发布到正式远端。
+
+## GitHub Releases 预览包
+
+2026-11-16：准备发布 `v0.1.2` / build `3`，目标 `arm64`（Apple Silicon），macOS 14+。测试 176 项、5 项跳过、零失败；构建、主程序及 Dock 插件架构、包签名、ZIP 解压后的版本与签名均已校验。已实际启动本次 `dist/Grove.app`，未重新执行应用所有控件的完整视觉验收。第三方依赖许可随包放在 `Contents/Resources/ThirdPartyNotices.txt`。未经 Apple 公证，不声称已通过 Gatekeeper。
+
+发布顺序：提交并推送版本及下载入口，在该提交上创建 `v0.1.2` prerelease，上传 `Grove-0.1.2-arm64.zip` 和 `SHA256SUMS.txt`，核对 GitHub 附件摘要及实际下载，最后核对主页部署。`dist/release/latest.json` 仅为本地打包清单，未据此配置或发布独立应用更新仓库。
