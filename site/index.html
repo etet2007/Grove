@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#212121">
+  <meta name="description" content="Grove 是原生 macOS Git 客户端：在一个工程中看清多仓库改动，用工作树组一起浏览同一项工作的 checkout。">
+  <meta property="og:title" content="Grove — 多仓库，一处看清">
+  <meta property="og:description" content="Native macOS Git client for multi-repository projects and worktree groups.">
+  <meta property="og:type" content="website">
+  <title>Grove — 多仓库，一处看清</title>
+  <link rel="icon" type="image/png" href="assets/grove-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="site-config.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main" data-zh="跳到正文" data-en="Skip to content">跳到正文</a>
+  <header class="header wrap">
+    <a class="brand" href="#" aria-label="Grove"><img src="assets/grove-icon.png" alt="" width="44" height="44">Grove</a>
+    <nav aria-label="主导航" data-zh-aria="主导航" data-en-aria="Main navigation">
+      <a href="#worktrees" data-zh="工作树组" data-en="Worktree groups">工作树组</a>
+      <a href="#review" data-zh="审阅体验" data-en="Review">审阅体验</a>
+      <button class="language" id="language" type="button" aria-label="Switch to English">English</button>
+      <a class="button small" href="#get-started" data-zh="开始使用 ↗" data-en="Get started ↗">开始使用 ↗</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-top">
+        <h1 id="hero-title" class="enter"><span data-zh="多仓库，一处看清。" data-en="Many repos.">多仓库，一处看清。</span><span data-zh="工作树，成组浏览。" data-en="One clear view.">工作树，成组浏览。</span></h1>
+        <div class="hero-copy enter">
+          <p data-zh="为多仓库工程打造的原生 macOS Git 客户端。把相关 worktree 放进一组，在同一个窗口看清整套改动。" data-en="A native macOS Git client for projects that span repositories. Bring related worktrees together and review the whole change in one window.">为多仓库工程打造的原生 macOS Git 客户端。把相关 worktree 放进一组，在同一个窗口看清整套改动。</p>
+          <a class="button" href="#worktrees" data-zh="看看工作树组 ↓" data-en="Explore worktree groups ↓">看看工作树组 ↓</a>
+          <p class="note" data-zh="macOS 14+ · 简体中文 / English" data-en="macOS 14+ · English / 简体中文">macOS 14+ · 简体中文 / English</p>
+        </div>
+      </div>
+      <figure class="product-shot enter">
+        <a href="assets/grove-changes.png" target="_blank" rel="noopener" aria-label="查看完整多仓库截图" data-zh-aria="查看完整多仓库截图" data-en-aria="Open the full multi-repository screenshot"><img src="assets/grove-changes.png" width="2880" height="1764" alt="Grove 演示工程：三个仓库的修改列表和并排 diff，feature/search 工作树组已选中" data-zh-alt="Grove 演示工程：三个仓库的修改列表和并排 diff，feature/search 工作树组已选中" data-en-alt="Grove demo: changes across three repositories and a side-by-side diff, with the feature/search worktree group selected" fetchpriority="high"></a>
+        <figcaption><span data-zh="Orbit 演示工程 · 三个仓库，一套修改视图" data-en="Orbit demo project · Three repositories, one change view">Orbit 演示工程 · 三个仓库，一套修改视图</span><span data-zh="点击查看原图 ↗" data-en="Open full size ↗">点击查看原图 ↗</span></figcaption>
+      </figure>
+    </section>
+
+    <section class="worktrees wrap" id="worktrees" aria-labelledby="worktrees-title">
+      <div class="section-heading reveal">
+        <h2 id="worktrees-title" data-zh="一个任务，一组工作树。" data-en="One task. A set of worktrees.">一个任务，一组工作树。</h2>
+        <p data-zh="App 和共享库在做新功能，SDK 继续用主目录。工作树组记住每个仓库该看哪里，省去逐个寻找 checkout。" data-en="Your app and shared library are on a feature; the SDK stays in its primary checkout. A worktree group remembers which checkout to show for each repository.">App 和共享库在做新功能，SDK 继续用主目录。工作树组记住每个仓库该看哪里，省去逐个寻找 checkout。</p>
+      </div>
+      <div class="group-demo reveal" data-ui>
+        <div class="group-choice">
+          <svg class="branch-mark" viewBox="0 0 100 130" fill="none" aria-hidden="true"><path d="M24 108V22M24 80c0-34 52-14 52-49" stroke="currentColor" stroke-width="7"/><circle cx="24" cy="108" r="10" fill="currentColor"/><circle cx="24" cy="22" r="10" fill="currentColor"/><circle cx="76" cy="22" r="10" fill="currentColor"/></svg>
+          <p class="demo-label" data-zh="试着选择工作树组" data-en="Try choosing a worktree group">试着选择工作树组</p>
+          <div class="group-buttons" role="group" aria-label="演示工作树组" data-zh-aria="演示工作树组" data-en-aria="Demo worktree groups">
+            <button type="button" data-group="feature" aria-pressed="true">feature/search<span aria-hidden="true">↗</span></button>
+            <button type="button" data-group="primary" aria-pressed="false"><span data-zh="主目录" data-en="Primary Checkout">主目录</span><span aria-hidden="true">↗</span></button>
+          </div>
+          <p class="demo-note" data-zh="交互示意 · 不执行 Git 操作" data-en="Interactive example · No Git operations">交互示意 · 不执行 Git 操作</p>
+        </div>
+        <div class="checkout-map" aria-live="polite" aria-atomic="true">
+          <div class="map-heading"><span data-zh="仓库" data-en="Repository">仓库</span><span data-zh="当前浏览的 checkout" data-en="Checkout to browse">当前浏览的 checkout</span></div>
+          <div class="checkout-row"><div><svg class="repo-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h13v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 14h13M8 7h6"/></svg><strong>orbit-app</strong></div><div><span class="checkout-branch" data-repo="app">feature/search</span><span class="match-reason" data-zh="同名分支自动匹配" data-en="Matched by branch name">同名分支自动匹配</span></div></div>
+          <div class="checkout-row"><div><svg class="repo-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h13v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 14h13M8 7h6"/></svg><strong>search-kit</strong></div><div><span class="checkout-branch" data-repo="library">feature/search</span><span class="match-reason" data-zh="同名分支自动匹配" data-en="Matched by branch name">同名分支自动匹配</span></div></div>
+          <div class="checkout-row"><div><svg class="repo-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h13v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 14h13M8 7h6"/></svg><strong>native-sdk</strong></div><div><span class="checkout-branch shared" data-repo="sdk">main</span><span class="fallback-reason" data-zh="无对应工作树，沿用主目录" data-en="No matching worktree; uses primary">无对应工作树，沿用主目录</span></div></div>
+          <p class="selection-summary" id="selection-summary" data-zh="两仓库匹配 feature/search，SDK 沿用主目录。" data-en="Two repositories match feature/search; the SDK uses its primary checkout.">两仓库匹配 feature/search，SDK 沿用主目录。</p>
+        </div>
+      </div>
+      <div class="group-explanation">
+        <div class="reveal"><h3 data-zh="组织仓库，也组织工作。" data-en="Organize repos and tasks.">组织仓库，也组织工作。</h3><p data-zh="工程定义有哪些仓库，仓库组整理侧边栏，工作树组选择一套 checkout。你也可以单独指定某个仓库的 worktree，选择会为当前组保存。" data-en="A project defines your repositories. Repository groups organize the sidebar. Worktree groups choose a set of checkouts, with saved overrides for individual repositories.">工程定义有哪些仓库，仓库组整理侧边栏，工作树组选择一套 checkout。你也可以单独指定某个仓库的 worktree，选择会为当前组保存。</p></div>
+        <div class="reveal"><h3 data-zh="切换视角，保留现场。" data-en="Change your view, keep your work.">切换视角，保留现场。</h3><p data-zh="选择工作树组只切换浏览目录，不会批量切分支。Grove 只发现你明确添加的仓库里的 worktree，浏览与自动刷新使用本地 Git 数据。" data-en="Choosing a worktree group changes the directories you browse; it does not switch branches in bulk. Grove discovers worktrees only in repositories you add, and browsing uses local Git data.">选择工作树组只切换浏览目录，不会批量切分支。Grove 只发现你明确添加的仓库里的 worktree，浏览与自动刷新使用本地 Git 数据。</p></div>
+      </div>
+    </section>
+
+    <section class="review wrap" id="review" aria-labelledby="review-title">
+      <div class="review-intro reveal"><h2 id="review-title" data-zh="看全局，也看每一行。" data-en="The whole change. Every line.">看全局，也看每一行。</h2><p data-zh="从工程的修改分布，到文件的增删细节，再到各仓库的本地历史。" data-en="Move from changes across your project to the lines in a file and the history of each repository.">从工程的修改分布，到文件的增删细节，再到各仓库的本地历史。</p></div>
+      <div class="review-layout">
+        <article class="review-main reveal">
+          <a class="image-crop diff-crop" href="assets/grove-changes.png" target="_blank" rel="noopener"><img src="assets/grove-changes.png" alt="SearchService.swift 的语法高亮与并排增删对比" data-zh-alt="SearchService.swift 的语法高亮与并排增删对比" data-en-alt="Syntax-highlighted side-by-side changes in SearchService.swift" width="2880" height="1764" loading="lazy"></a>
+          <h3 data-zh="把 diff 看清楚。" data-en="Read the diff closely.">把 diff 看清楚。</h3><p data-zh="并排与统一视图、语法高亮、查找和空格放大预览。图片、SVG、Android VectorDrawable 与 Markdown 也有各自的预览。" data-en="Side-by-side and unified views, syntax highlighting, search, and Space to open a large preview. Images, SVG, Android VectorDrawable, and Markdown have previews too.">并排与统一视图、语法高亮、查找和空格放大预览。图片、SVG、Android VectorDrawable 与 Markdown 也有各自的预览。</p>
+        </article>
+        <div class="review-secondary">
+          <article class="reveal"><a class="image-crop history-crop" href="assets/grove-history.png" target="_blank" rel="noopener"><img src="assets/grove-history.png" width="2880" height="1764" alt="Grove 的本地提交历史图与提交详情" data-zh-alt="Grove 的本地提交历史图与提交详情" data-en-alt="Grove local commit graph and commit details" loading="lazy"></a><h3 data-zh="沿着历史找上下文。" data-en="Find context in history.">沿着历史找上下文。</h3><p data-zh="查看单仓库提交图，或把多个仓库的提交合并为时间线。" data-en="Follow a repository’s commit graph, or combine commits from multiple repositories in a timeline.">查看单仓库提交图，或把多个仓库的提交合并为时间线。</p></article>
+          <article class="reveal"><a class="image-crop file-crop" href="assets/grove-review.png" target="_blank" rel="noopener"><img src="assets/grove-review.png" width="2880" height="1764" alt="在 search-kit 仓库中审阅新增的 SearchRanking.swift 文件" data-zh-alt="在 search-kit 仓库中审阅新增的 SearchRanking.swift 文件" data-en-alt="Reviewing the new SearchRanking.swift file in search-kit" loading="lazy"></a><h3 data-zh="在仓库之间顺畅浏览。" data-en="Move between repositories.">在仓库之间顺畅浏览。</h3><p data-zh="⌘K 快速切换，⌘R 刷新。回到窗口即更新，已访问页面保留浏览状态。" data-en="Use ⌘K to switch quickly and ⌘R to refresh. Returning to the window refreshes local data; visited panes retain their browsing state.">⌘K 快速切换，⌘R 刷新。回到窗口即更新，已访问页面保留浏览状态。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="commit-section wrap" aria-labelledby="commit-title">
+      <div class="commit-copy reveal"><h2 id="commit-title" data-zh="准备提交，由你确认。" data-en="Prepare. Review. Commit.">准备提交，由你确认。</h2><p data-zh="让本机 Codex、Claude Code 或 OMP 读取改动和你选择的提交 Skill，生成按完整文件拆分的方案。编辑提交说明，核对每笔准确 diff，确认后才创建本地提交。" data-en="Let your installed Codex, Claude Code, or OMP read the changes and your chosen commit Skill. Edit a plan split by whole files, inspect the exact diffs, and confirm before creating local commits.">让本机 Codex、Claude Code 或 OMP 读取改动和你选择的提交 Skill，生成按完整文件拆分的方案。编辑提交说明，核对每笔准确 diff，确认后才创建本地提交。</p><p class="note" data-zh="Agent 使用已有模型服务，分析内容可能由该服务处理。" data-en="Your Agent uses its configured model service, which may process the analyzed content.">Agent 使用已有模型服务，分析内容可能由该服务处理。</p></div>
+      <div class="operations reveal"><div><h3 data-zh="保留你的 Git 习惯" data-en="Keep your Git workflow">保留你的 Git 习惯</h3><p data-zh="保留 hook 和签名，保留未选中的暂存内容；状态变化时拒绝执行旧方案。" data-en="Keep hooks, signing, and unselected staged changes. A changed repository state invalidates the plan.">保留 hook 和签名，保留未选中的暂存内容；状态变化时拒绝执行旧方案。</p></div><div><h3 data-zh="远端操作，主动发起" data-en="Remote actions on your terms">远端操作，主动发起</h3><p data-zh="对单个仓库明确执行 Fetch、Pull 或 Push。Pull 仅 fast-forward，Push 不强推，浏览时不自动 fetch。" data-en="Explicitly Fetch, Pull, or Push for one repository. Pull is fast-forward only, Push never force-pushes, and browsing never auto-fetches.">对单个仓库明确执行 Fetch、Pull 或 Push。Pull 仅 fast-forward，Push 不强推，浏览时不自动 fetch。</p></div></div>
+    </section>
+
+    <section class="getting-started wrap" id="get-started" aria-labelledby="start-title">
+      <div class="start-copy reveal"><img src="assets/grove-icon.png" width="112" height="112" alt="Grove" loading="lazy"><h2 id="start-title" data-zh="把你的仓库放在一起。" data-en="Bring your repos together.">把你的仓库放在一起。</h2><p data-zh="从本地已有仓库开始。新建工程、添加仓库，再选一个工作树组。" data-en="Start with repositories already on your Mac. Create a project, add repositories, and choose a worktree group.">从本地已有仓库开始。新建工程、添加仓库，再选一个工作树组。</p><a class="text-link repository-link" hidden data-repository-path="" data-zh="在 GitHub 查看源码 ↗" data-en="View source on GitHub ↗">在 GitHub 查看源码 ↗</a></div>
+      <div class="build-panel reveal"><h3 data-zh="从源码构建" data-en="Build from source">从源码构建</h3><p data-zh="运行需要 macOS 14+。打包需要含 Icon Composer ictool 的完整 Xcode，以及登录钥匙串中可用的代码签名身份。" data-en="Runs on macOS 14+. Packaging requires full Xcode with Icon Composer’s ictool and a valid code-signing identity in your login keychain.">运行需要 macOS 14+。打包需要含 Icon Composer ictool 的完整 Xcode，以及登录钥匙串中可用的代码签名身份。</p><pre><code>zsh scripts/build-app.sh
+open dist/Grove.app</code></pre><button class="copy-button" type="button" id="copy" data-zh="复制构建命令" data-en="Copy build commands">复制构建命令</button><p class="note" data-zh="在仓库根目录执行。默认使用 MyGit Local Code Signing 自签名身份，用于本机开发；可通过 GROVE_SIGNING_IDENTITY 指定已有证书。" data-en="Run from the repository root. The default MyGit Local Code Signing identity is self-signed for local development; use GROVE_SIGNING_IDENTITY to choose an installed certificate.">在仓库根目录执行。默认使用 MyGit Local Code Signing 自签名身份，用于本机开发；可通过 GROVE_SIGNING_IDENTITY 指定已有证书。</p><a class="text-link repository-link" hidden data-repository-path="blob/HEAD/docs/development.md" data-zh="构建与签名指南（中文）↗" data-en="Build and signing guide (Chinese) ↗">构建与签名指南（中文）↗</a><span id="copy-status" role="status"></span></div>
+    </section>
+  </main>
+  <footer class="footer wrap"><a class="brand" href="#"><img src="assets/grove-icon.png" alt="" width="32" height="32">Grove</a><p data-zh="原生 macOS · 多仓库 · 工作树组" data-en="Native macOS · Multiple repos · Worktree groups">原生 macOS · 多仓库 · 工作树组</p><a href="#main" data-zh="回到顶部 ↑" data-en="Back to top ↑">回到顶部 ↑</a></footer>
+</body>
+</html>

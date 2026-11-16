@@ -1,128 +1,86 @@
+<p align="center">
+  <img src="Resources/GroveIcon.png" width="96" alt="Grove app icon">
+</p>
+
 # Grove
 
-Grove 是一个原生 macOS Git 客户端，用于快速浏览同一工程内多个仓库、多个 worktree 的未提交 diff 和本地提交记录。
+**See the whole change across repositories. Browse a set of worktrees together.**
 
-## 运行
+Grove is a native macOS Git client for projects that span multiple repositories. Bring their uncommitted changes and local commit history into one window, then choose a **worktree group** to review the checkouts associated with the same task.
 
-需要 macOS 14 或更新版本，以及 Xcode 命令行工具。运行 `zsh scripts/build-app.sh` 后，双击 `dist/Grove.app`。
+[简体中文](README.zh-CN.md) · [Getting started](#getting-started) · [Documentation](#documentation)
 
-产品、Swift 包、可执行文件、图标资源和源码目录已统一为 Grove（`Sources/Grove`、`Tests/GroveTests`）。为保留已有工程、偏好设置及更新签名，Bundle ID 仍为 `dev.stephenlau.mygit`，配置仍位于 `~/Library/Application Support/MyGit/config.json`，设置窗口的历史位置键和本机 `MyGit Local Code Signing` 证书也继续沿用。构建优先读取 `GROVE_SIGNING_IDENTITY`、`GROVE_VERSION`、`GROVE_BUILD`，同时兼容对应的旧 `MYGIT_*` 构建变量。
+![Grove showing changes across three repositories in the feature/search worktree group](site/assets/grove-changes.png)
 
-应用图标原始素材为 `Resources/GroveIcon-source.png`。运行 `zsh scripts/generate-icon.sh` 可重新生成带 macOS 圆角及透明留白的 PNG 和多尺寸 ICNS，再构建应用即可使用。
+## One project, multiple repositories
 
-构建脚本默认使用登录钥匙串中的 `MyGit Local Code Signing` 证书签名，不再使用每次改动后身份都会变化的临时签名。首次在本机配置时，可以在「钥匙串访问」的「证书助理 → 创建证书」中创建同名的「自签名根证书」，证书类型选「代码签名」。如果已有其他代码签名证书，可运行 `GROVE_SIGNING_IDENTITY="证书名称" zsh scripts/build-app.sh`。自签名证书仅用于本机开发；向其他人分发时应使用 Developer ID 签名。
+An app, a shared library, and a native SDK may live in separate Git repositories while shipping as one product. Grove brings them into one **project**, with changes grouped by repository so you can see where work is happening and inspect each file's diff.
 
-首次使用：
+Use **repository groups** to organize the sidebar—for example, App and Libraries. Filter down to a single repository, or browse local commits from all repositories in a combined timeline.
 
-1. 新建工程。
-2. 新建可折叠的仓库组，例如 App、CSDK。
-3. 在每个仓库组中添加已有的本地 Git 仓库目录。可一次选择多个目录。
-4. 在侧边栏选择工作树组；同名分支会自动归组，缺失的仓库沿用主目录。
-5. 点击仓库名筛选当前标签的浏览范围；分支名旁的工作树菜单可单独选择其 worktree，「恢复自动匹配」会清除手动选择。
+## Worktree groups follow your task
 
-侧边栏的工作树组可拖拽调整顺序，也可右键选择「上移」或「下移」；顺序自动保存。
-关联仓库区域也可拖动仓库组标题排序，或拖动仓库名称调整组内顺序，松开后自动保存。
+A **worktree group** remembers which checkout to browse for each repository. Grove discovers existing Git worktrees in the repositories you add and automatically groups extra worktrees with matching branch names. Repositories without a matching worktree use their primary checkout; you can choose a different checkout for any repository and save that choice for the group.
 
-右键工作树组或仓库条目中的分支名，选择「复制分支名」可复制完整分支名称。未关联分支的工作树组和分离 HEAD 不提供此入口。
+For example, a `feature/search` group could bring together:
 
-点击仓库条目中的分支名可打开本地分支列表，选择后切换当前 checkout。当前分支置顶并有勾选标记，其他 worktree 占用的分支不可选。列表支持滚动和名称搜索；默认隐藏形如 `ugit-stash/<7–40 位十六进制哈希>-1/3` 的工具临时分支（当前分支始终保留），可勾选「显示工具临时分支」查看。这只是列表过滤，不删除 Git 分支。切换使用非强制 Git switch：允许保留兼容的未提交修改，无法切换时显示 Git 错误；不会丢弃修改、自动 stash、创建分支或联网。切换后继续浏览原 checkout，并保存当前工作树组的单仓库选择。
+| Repository | Checkout shown in the group | Selection |
+| --- | --- | --- |
+| App | `feature/search` worktree | Matched by branch name |
+| Shared library | `feature/search` worktree | Matched by branch name |
+| Native SDK | Primary checkout | No matching worktree |
 
-`⌘K` 打开快速切换，`⌘R` 刷新。Mac 的「工作树」菜单也提供切换入口。窗口回到前台时立即刷新，在前台期间每 10 秒自动刷新一次，退到后台后停止定时刷新；也可用 `⌘R` 手动刷新。刷新尚未完成时跳过下一次自动刷新。前台也监听文件变化，合并连续保存事件后只更新受影响的 checkout；自动刷新复用 HEAD 未变化的提交记录和未失效的 MR 链接。当前浏览的额外 checkout 被外部操作切换分支或切到 detached HEAD 时，保留该工作树组和原目录，并保存单仓库选择；选中的 detached 工作树重新关联分支时也保留当前组。工作树读取失败时保留上次目录信息并显示错误，等待后续刷新恢复，不据此改用主目录。切回最近浏览过的工作树组时，先立即显示内存中的修改列表和提交记录，再在后台更新；首次打开仍需读取 Git。缓存最多保留 12 套浏览结果，退出应用后清空。手动刷新会重新读取本地 Git 数据。配置保存在 `~/Library/Application Support/MyGit/config.json`。
+Select the group once to browse that set of changes. Return to **Primary Checkout** to view every repository's primary checkout, even when those checkouts have different branch names.
 
-从菜单栏「Grove → 设置…」（`⌘,`）进入 General，可将应用字体大小设为 10–18 pt，默认 12 pt。侧边栏、列表和 diff 会立即更新，所有窗口共享字号，重启后保留。General 也可选择简体中文或 English；语言修改在重启应用后生效，包含原生菜单。
+Selecting a worktree group changes what Grove displays. It does not run `git switch` across your repositories. Switching a checkout's branch is a separate, explicit action.
 
-工程可从窗口标题栏的工程菜单切换。通过「文件 → 新建窗口」打开多个窗口后，各窗口可以独立选择工程和工作树组。
+## Review and act
 
-工程菜单底部的「管理工程…」可拖动调整工程顺序，双击名称或点击铅笔重命名，回车或结束编辑后自动保存；Esc 取消当前改名。右键工程也可上移、下移。名称不能为空，名称和顺序重启后保留，并用于工程菜单、快速切换及顶部「工作树」菜单。
+- **Read changes closely.** Side-by-side and unified diffs, syntax highlighting, search, and a large file preview. Preview image changes, SVG, Android VectorDrawable, and rendered Markdown.
+- **Follow local history.** A commit graph per repository, file-level commit diffs, and a combined timeline across repositories.
+- **Prepare commits with your Agent.** Use an installed Codex, Claude Code, or OMP with your chosen commit Skill. Review and edit a plan split by whole files, inspect the exact diffs, then confirm local commits. Existing hooks and signing remain in effect.
+- **Perform deliberate Git operations.** Switch to an existing local branch, discard selected unstaged changes, or explicitly Fetch, Pull, and Push for one repository. Pull is fast-forward only; Push never force-pushes.
 
-侧边栏首次打开时按名称和字号选择紧凑宽度；窗口放大或进入全屏时保持当前宽度，把新增空间留给内容区。拖动侧边栏与内容区之间的分隔线仍可加宽或缩窄侧边栏；手动选择的宽度在当前窗口中保留。
+Browsing and automatic refresh use local Git data. Remote Git operations run only when you initiate them. Agent-assisted commit preparation uses your Agent's configured model service, which may process the analyzed content.
 
-「未提交修改」和「提交记录」各自保留所选内容、显示模式及滚动位置，切回标签可继续浏览；列表与详情首次访问时才创建，隐藏页面保留原视图并移出布局树，窗口缩放只调整当前可见页面；切换工程或工作树组会清空所选详情，提交记录列表回到顶部。
+## Getting started
 
-提交记录默认显示第一个有效仓库的本地历史。点击「关联仓库」中的仓库名或提交列表顶部的菜单切换仓库；选择「全部仓库」可查看按时间合并的记录。两个标签分别保留仓库筛选范围；在未提交修改中选择文件、点击仓库标题或选择侧栏仓库后，切到提交记录会定位到最后操作的仓库（选择全部则显示全部仓库），并恢复该仓库上次浏览的提交；未提交页没有新的选择时，来回切换保留提交记录当前范围。运行期间记住各工程上次查看的提交仓库，各仓库分别保留所选提交、列表位置和提交内文件选择。「加载更早提交」只扩展当前仓库的历史，全部仓库模式则扩展所有仓库。切换工程、工作树组或单仓库 checkout 后清空详情和列表位置。
+Grove runs on **macOS 14 or later** and supports English and Simplified Chinese.
 
-单仓库提交记录左侧显示彩色历史图：圆点表示普通提交，方点表示合并提交，连线表示父提交关系。历史图仅包含当前 checkout 的 HEAD 可达历史，按拓扑顺序排列（子提交在父提交前），支持加载更早提交；底部延伸线表示尚未加载的父提交。颜色用于区分轨道，不绑定分支名。鼠标悬停在具体的彩色线段或提交节点上时，显示该轨道关联的本地分支名；顶部和提交旁不常驻分支标签。没有可用分支标签时，悬停提示“历史线”及原因，不猜测已删除分支的名称；刷新时重新读取本地分支引用，即使 HEAD 未变也会更新标签。「全部仓库」继续按时间合并记录，不显示跨仓库连线。
+### Build from source
 
-提交详情默认显示文件列表和单文件 diff；点击文件或使用上下箭头切换，列表显示修改类型和增删行数。拖动文件列表与下方详情之间的横向分隔线，可上下调整两块区域的高度；文件列表仍可独立滚动。「查看全部」可连续浏览整个提交。整文件新增或删除用单栏显示；diff 按可见行渲染。
+The current packaging script requires **full Xcode with Icon Composer's `ictool`**, plus a valid code-signing identity in your login keychain. Command Line Tools alone are insufficient. It builds for your Mac's architecture.
 
-未提交修改和提交记录的文件列表支持长按文件行（约 0.5 秒）打开放大 diff 预览（占满当前屏幕可用区域，保留菜单栏和 Dock，不进入 macOS 全屏空间）；列表获得焦点后，也可按空格打开所选文件。展开时从文件行放大，关闭时收回；动画使用静态画面过渡，避免逐帧重新布局 diff，系统启用“减少动态效果”时改用短淡入淡出。预览保留滚动、并排及统一 diff，使用 ↑ / ↓ 或顶部按钮切换文件，首尾不循环；未提交修改遵循当前筛选及展开的文件顺序，提交记录仅在当前提交内切换。Esc、空格或关闭按钮关闭预览并将焦点归还文件列表，主界面跟随保留最后所选文件。
-
-并排 diff 中，拖动两栏之间的竖向分隔线可调整左右宽度；向左拖动可加宽右侧工作区。标题和代码内容一起调整，左右滚动仍保持同步。
-
-并排和统一 diff 支持基于文件扩展名的轻量语法高亮：关键字、字符串、注释、数字、类型和函数名使用不同颜色，括号按层级着色，增删行仍保留红绿背景。支持 Swift、Java/Kotlin、C/C++、JavaScript/TypeScript、XML、JSON、Python 和常见脚本等；未识别的文件使用普通文本。高亮仅处理显示的 diff 内容；并排视图继续只渲染可见行，代码选择和丢弃操作保持可用。
-
-未提交修改中的图片、SVG 和 Android VectorDrawable XML（根节点为 `<vector>`）在并排视图显示修改前后的图像；切换「统一内联」可查看源码 diff。矢量 XML 支持路径、ARGB 颜色、透明度、分组变换、裁剪，以及 `aapt:attr` 的线性和径向渐变。普通 XML 保持文本 diff；资源引用、主题 tint、路径裁切和扫描渐变等暂不支持，显示提示并保留源码。预览不解析工程资源，不加载外部图片或脚本。
-
-Markdown 文件（`.md`、`.markdown`、`.mdown`、`.mkd`）在详情顶部提供「阅读预览」。按完整文档渲染，可切换修改前后版本；未暂存比较 index 与工作文件，已暂存比较 HEAD 与 index，全部修改比较 HEAD 与工作文件；提交记录读取提交与第一父提交的文件。支持标题层级、强调、行内代码、带语言高亮的代码块、嵌套列表、任务列表、引用、GFM 表格、删除线和 `==高亮==`，采用珊瑚红标题、金色强调及青色代码的深色阅读样式，基础字号跟随应用设置；阅读栏的 A− / A+ 可按 10% 调整预览（70%–200%），点击百分比恢复 100%。也支持 `⌘−` 缩小、`⌘+`（或 `⌘=`）放大、`⌘0` 恢复。缩放比例单独记忆，供所有 Markdown 阅读预览共用；快捷键仅在当前窗口显示阅读预览时生效，调整时不重新加载文档。并排和统一 diff 继续用于核对准确修改；提交的「查看全部」仍展示 diff。预览不执行文档 HTML/脚本，不自动读取图片或外部资源，图片显示描述占位；链接仅在用户点击后用系统应用打开。单个版本超过 2 MB 或非 UTF-8 时提示使用源码 diff。
-
-纯文件移动或重命名在未提交修改和提交详情中显示“文件已移动或重命名，内容未变”，并列出原路径和新路径；带正文或文件权限修改时保留 diff。
-
-合并提交展示合并结果相对第一父提交（合并前当前分支）的修改，支持文件列表和并排 diff，并在详情中标明比较基准。
-
-选择合并提交中的文件，会按需读取本地合入历史，在文件条目和详情中显示“合入相关作者”；展开“来源提交”可查看作者、邮箱、提交说明和哈希。来源是合入父提交可达、第一父提交不可达且涉及该文件（含重命名前路径）的普通提交，不代表逐行作者或冲突解决者。未找到来源或本地历史无法读取时会显示提示；不联网补齐历史。
-
-在「未暂存」的并排文本 diff 中，在修改行的代码位置右键，可选择「丢弃此行修改…」或「丢弃此块修改…」；在块内上下文行或 `@@` 标题右键，可丢弃整个块。确认后仅恢复所选行；替换行会恢复左侧原行并移除右侧新行。暂存区和未选中的修改保留；未跟踪文件移除所选行后仍保留文件。文件或暂存区已变化时拒绝执行，需刷新后重新选择。已暂存、全部修改、提交详情、图片、二进制、冲突、符号链接及自定义内容过滤文件不提供此操作。
-
-右键点击仓库、worktree 或文件条目，可选择「在 Finder 中打开」。文件条目和文件详情标题还可选择「复制文件名」，只复制文件名（含扩展名），不含目录；已删除或当前不存在的历史文件也可复制。目录直接打开，文件在 Finder 中选中；路径使用当前 checkout，已删除或当前不存在的历史文件会打开最近仍存在的父目录。
-
-点击顶部「创建 MR」，选择仓库后会在浏览器打开该仓库的 GitLab 创建页面，并预选当前 checkout 的分支。链接来自本地 Git 远端配置；分支需要已推送到 GitLab，才能在网页中创建 MR。应用不会自动推送或提交 MR。
-
-diff 查找会在后台准备搜索内容并扫描匹配行，连续输入时合并短时间内的查询；等待结果时显示“…”；改词、切换文件或清空查询会取消旧任务，避免过期结果跳回原文件。统一 diff 的显示行与搜索使用同一份预处理内容。
-
-## 验证
-
-运行 `swift test`。测试使用临时 Git 仓库，不修改已有项目。
-
-`GROVE_SEARCH_BENCHMARK=1 swift test --filter DiffSearchTests` 可测量 5 万行内容中修改查询文本的主线程同步耗时；这衡量输入是否阻塞界面，不代表搜索结果完成时间。该耗时测试默认跳过，取消和结果一致性测试始终运行。
-
-窗口缩放性能可在机器空闲时运行 `GROVE_RESIZE_BENCHMARK=1 swift test --filter WindowResizePerformanceTests`。测试使用临时配置和合成的 1,000 行 diff，自动调整完整窗口尺寸，输出布局与绘制的中位耗时及 P95，以 16.7 ms 检查 60 Hz 帧预算；默认跳过，避免机器负载造成普通测试误报。另可运行 `GROVE_RESIZE_BENCHMARK=1 swift test --filter RetainedPaneTests`，测量访问过 6 个仓库详情后隐藏页面对缩放的影响，并验证切回后的滚动位置。该测量不等同于真实拖动帧率，仍需手动检查连续拖动、全屏切换及分栏宽度。
-
-当前图标采用绿色树形 A 方案，原始候选稿保存在 `design/icon-exploration/2026-11-03-green-grove/A-vector-green.png`；`Resources/GroveIcon-source.png` 是裁去展示背景后的打包输入。`scripts/generate-icon.swift` 为其添加圆角与透明留白。修改素材后运行 `zsh scripts/generate-icon.sh`，生成 `Resources/GroveIcon.png` 和用于应用包的 `Resources/GroveIcon.icns`。
-
-文件详情将纯重命名、二进制、空文件、仅权限变化、子模块提交及符号链接目标显示为摘要；混合 diff 按文件保留文本代码并展示摘要。子模块显示前后提交号，符号链接显示前后目标。文件类型转换或同时含正文修改时保留代码 diff。文件末尾缺少换行时提供中文或英文说明。
-
-搜索、输入与下拉选择统一使用深灰平面控件：筛选栏高度 32 pt、表单输入 36 pt，随应用字号一起缩放。搜索框提供内置清除按钮；下拉以深色列表展开，支持方向键、回车确认和 Esc 取消。视觉规范见 `DESIGN.md` 的「全局控件视觉规范」。
-
-## Agent 辅助提交
-
-在「Grove → 设置… → 提交」中选择本机 Agent（Codex、Claude Code 或 OMP）和提交 Skill。应用自动检测常见安装路径；也可手动指定可执行文件并测试生成。「路径与模型」可指定模型，留空时沿用 Agent 默认配置。若检测到本机 `commit-message/SKILL.md`，点击「使用此 Skill」即可，之后每次准备提交，Agent 都会读取所选 Skill 和它引用的规范。Agent 使用已有登录和模型配置，分析内容可能由其模型服务处理。
-
-在未提交修改的仓库标题点击「准备提交…」，核对 checkout 路径及分支，选择已暂存或全部修改，生成提交方案。可以编辑每笔说明、查看 diff、移动文件、保留文件或合并方案。第一版按完整文件拆分。确认后顺序创建本地提交，保留未选中暂存与工作文件；不绕过 hook 或签名，不自动推送。状态变化时需要重新生成；部分失败显示已产生的提交哈希，停止后续操作。
-
-自动测试不调用模型服务。需要联调某个已登录的本机 Agent 时，运行 `GROVE_TEST_AGENT=codex swift test --filter CommitExecutionTests.testLiveAgentGenerationWhenExplicitlyEnabled`，可将 `codex` 换成 `claude` 或 `omp`。联调只在临时仓库生成建议，不提交。
-
-设置窗口采用侧边导航与卡片布局，默认内容尺寸 960 × 760，支持拖动边缘调整大小（最小 820 × 620），并记住窗口尺寸。Agent 可直接点击卡片选择，路径与模型配置折叠显示。
-
-「设置 → 外观」可选择应用图标：A 经典绿（默认）、B 玻璃绿、A2 柔和绿、春夏秋冬，以及 E 折纸林、F 雕塑林。点击卡片立即更新 Dock 和应用切换器，所有窗口共享选择，重启后保留。默认款使用系统的包内图标；其他款在打包时用 Icon Composer 导出带边缘效果的图像，统一透明留白后生成保留透明通道的 256 像素有损压缩资源，运行时及退出后复用；效果为固定的默认外观，不随系统明暗或着色动态变化；运行时通过 AppKit 切换图标，Dock Tile 插件只在退出后绘制非默认款，避免覆盖运行时的标准显示路径；Finder 中的应用文件仍使用打包的默认图标。首次使用插件的构建，如果已固定在 Dock 的条目仍显示旧图标，可移出 Dock 后从当前应用重新选择「在 Dock 中保留」。卡片支持方向键移动焦点、回车或空格选择、Esc 退出焦点，也可恢复默认。`Sources/Grove/Resources/AppIcons/` 保留开发用原始图；正式包只携带小尺寸导出图和默认 ICNS，不重复携带原始大图，也不在运行时改写签名包。`swift scripts/generate-app-icons.swift` 可重新打包图标素材；四季素材与提示词见 `design/icon-exploration/2026-11-05-seasons/`。E/F 已按 A 的单树三节点图形重新生成，材质与提示词见 `design/icon-exploration/2026-11-05-materials/`，与 A/B/A2 一起放在「通用」组，四季单列。
-
-生成提交方案与设置中的测试生成提供实时执行详情：显示读取 diff、加载 Skill、Agent 的公开摘要与输出、方案校验和已用时间，可收起详情或关闭自动跟随。实际提交显示每笔的校验、Git hook/签名输出、步骤耗时及完成哈希；提交结果立即返回，仓库视图随后在后台刷新。日志仅保留在当前窗口内存中，输出限制大小，并隐藏常见凭据。
-
-准备提交时，Agent 直接在所选 checkout 中只读分析 `git status`、diff、相关源文件、仓库规则和提交历史，并自行加载所选 Skill。Grove 的提示词只提供范围与文件清单，不包含完整 diff；已移除 400 KB diff 与大文件指纹上限。Grove 仍保存完整 diff 用于审阅和执行前核对。Codex 使用其原生 read-only 沙箱；Claude Code/OMP 使用受限读取工具并在系统层保护 checkout、共享 Git 元数据和所选 Skill 文件。实时详情显示实际读取命令与文件。
-
-## 远端操作
-
-未提交修改的仓库标题提供 Fetch、Pull、Push 和准备提交的纯图标按钮，鼠标悬浮显示操作提示，点击后按当前 upstream 执行，操作图标位于仓库条目右侧；执行时对应图标显示转圈，成功/失败短暂显示绿色勾/红色警告，随后恢复。悬浮查看结果，状态期间点击图标或右键查看执行详情可展开 Git 输出。Fetch 优先使用 upstream 远端，其次 origin 或唯一远端；无法确定远端时也打开选择面板。Pull/Push 未配置远端 upstream 时自动打开目标选择面板，预填当前分支；首次 Push 默认勾选设置 upstream。仓库右键菜单保留高级操作面板，可选择远端和目标分支后确认执行。Fetch 不修改工作文件；Pull 仅 fast-forward，要求先处理未提交修改，分支分叉时拒绝执行，不自动 stash 或 rebase。Push 只推送当前分支到指定远端分支，可勾选设置 upstream，不强推、不自动推送其他分支或标签。
-
-执行详情显示 Git 输出与耗时，成功或失败后刷新仓库。本机 Git credential helper、SSH 配置及 hook 保留；不提供终端交互认证，请先在终端完成登录、SSH 密钥解锁和主机信任。操作只由用户点击按钮或确认高级面板触发，浏览与自动刷新不会联网。linked worktree 与共享 Git 数据的其他写操作在多个窗口间互斥。
-
-Pull/Push 图标随本地 upstream 状态更新：待拉取/推送时显示蓝色实心箭头，分叉时显示橙色；悬浮显示提交数量和目标。缺少远端 upstream 或本地记录时显示提示标记。数量基于本地远端记录，Fetch 后刷新；浏览和状态读取不联网，Fetch 不预判尚未获取的远端更新。
-
-不同仓库的 Fetch/Pull/Push 可并行执行，每个按钮独立显示进度与结果；同一仓库及共享 Git 数据的 linked worktree 仍互斥。全部远端操作结束后统一刷新仓库，执行期间继续保护提交、切分支和 Discard。
-
-## 应用自身更新
-
-发布操作和后续交接见 [更新发布操作记录](docs/releasing.md)。后续可直接让 Agent 按此记录发布新版。
-
-设置 → 应用更新中填写更新仓库的 HTTPS / SSH 克隆地址和发布分支（默认 `main`），点击「检查更新」。仓库根目录固定放置 `latest.json`、`Grove.zip`，无需 Releases 或额外服务器。检查时在独立临时目录浅克隆最新一版，会下载该版本的安装包；不会修改工程仓库，不自动检查、不推送。私有仓库沿用本机 Git 认证，需先在终端完成认证和 SSH 主机信任，不提供交互登录。
-
-发布示例（需 Python 3，构建签名证书沿用现有配置）：
+From the repository root, with those prerequisites configured:
 
 ```sh
-zsh scripts/prepare-update.sh 0.2.0 3 /你的/更新仓库 '更新说明'
+zsh scripts/build-app.sh
+open dist/Grove.app
 ```
 
-脚本构建并校验 App，将 `Grove.zip` 与含版本、递增 build、SHA-256 和更新说明的 `latest.json` 写入指定目录。每次发布的 build 必须大于旧版；两文件一起提交并推送到设置的分支即可。脚本不执行 Git 提交或推送，不修改源码中的版本号。建议使用独立的小仓库发布，清理其历史不会影响源码；每次检查使用全新的浅克隆，支持重写后的发布历史。安装包不要使用 Git LFS。
+The default signing identity is `MyGit Local Code Signing`, retained for compatibility. To use another installed identity, set `GROVE_SIGNING_IDENTITY="Certificate Name"` when running the build script. See the [build guide (中文)](docs/development.md) for setup, verification, and tests. The default self-signed setup is intended for local development.
 
-用户确认「更新并重启」后，Grove 校验 SHA-256、应用标识、版本及当前应用的代码签名身份；退出后在原位置替换并重启，替换或打开失败会尝试恢复旧版，日志位于 `~/Library/Logs/Grove/update.log`。需要使用同一签名身份发布（本机自签名适合同机开发，对外分发使用 Developer ID 和公证），应用需位于可写目录，不能从磁盘镜像直接更新。构建产物需适合目标 Mac 的架构；当前简单格式不支持包含符号链接的安装包。工程配置不随应用包替换。Git 写操作进行中或存在其他 Grove 实例时拒绝安装。
+### Add your repositories
 
-未提交文件列表支持 ⌘ 点击多选、Shift 点击连续选择。右键「复制文件名」复制所选文件名（每行一个）；「丢弃文件修改…」确认后恢复所选文件到暂存区版本，未跟踪文件会删除，已暂存内容和未选中文件保留。仅含已暂存修改或冲突的选择不能执行。确认期间文件、HEAD、分支或暂存区变化会拒绝执行；批量操作遇到失败立即停止，并列出已完成文件。
+1. Create a project, then a repository group such as App or Libraries.
+2. Add your existing local Git repository directories; you can select several at once. Grove discovers worktrees only from repositories you explicitly add.
+3. Select a worktree group in the sidebar to browse its changes.
+4. Click a repository name to filter the view. Use its worktree menu to override the checkout for the current group; **Restore Automatic Match** clears the override.
+
+Use **⌘K** for quick switching, **⌘R** to refresh, and **Space** to open a selected file's large diff preview. Agent setup is optional for browsing and remote operations.
+
+## Documentation
+
+The detailed guides are currently in Chinese.
+
+| Guide | Contents |
+| --- | --- |
+| [User guide](docs/user-guide.md) | Projects, worktree selection, diffs, history, settings, discard, and remote operations |
+| [Agent-assisted commits](docs/agent-commits.md) | Agent and Skill setup, plan review, execution, and data access |
+| [Development and builds](docs/development.md) | Xcode, signing, tests, benchmarks, icons, and compatibility identifiers |
+| [App updates](docs/updating.md) | Configuring an update source and installing updates |
+| [Release procedure](docs/releasing.md) | Versioning, packaging, signing continuity, and release verification |
+
+Product behavior is recorded in [DESIGN.md](DESIGN.md), terminology in [CONTEXT.md](CONTEXT.md), and the repository-discovery boundary in [ADR 0001](docs/adr/0001-discover-worktrees-from-registered-repositories.md).
+
+[Homepage source and GitHub Pages setup](docs/github-pages.md)

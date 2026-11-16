@@ -9,6 +9,12 @@
 - 应用设置入口：「设置 → 应用更新」，填写 Git HTTPS / SSH 克隆地址和分支。默认分支 `main`，以正式配置为准。
 - 更新偏好存于 UserDefaults：`updateRepository`、`updateBranch`。不要在文档中记录凭据。
 
+## 源码与主页
+
+- 正式源码仓库：[etet2007/Grove](https://github.com/etet2007/Grove)，默认分支 `main`。
+- GitHub Pages 主页由 `.github/workflows/pages.yml` 发布，维护方法见 [GitHub Pages 主页](github-pages.md)。
+- 源码与主页的公开发布不等同于 App 更新包发布；独立更新仓库尚未确定，不能将源码仓库自动作为应用更新源。
+
 ## 每次发布
 
 1. 阅读本项目 `AGENTS.md`，检查当前 Grove checkout 的工作区状态，保留用户已有修改。确认本次要发布的改动范围。
