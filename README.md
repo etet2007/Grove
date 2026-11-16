@@ -8,7 +8,7 @@
 
 Grove is a native macOS Git client for projects that span multiple repositories. Bring their uncommitted changes and local commit history into one window, then choose a **worktree group** to review the checkouts associated with the same task.
 
-[简体中文](README.zh-CN.md) · [Getting started](#getting-started) · [Documentation](#documentation)
+[简体中文](README.zh-CN.md) · [Homepage](https://etet2007.github.io/Grove/) · [Getting started](#getting-started) · [Documentation](#documentation)
 
 ![Grove showing changes across three repositories in the feature/search worktree group](site/assets/grove-changes.png)
 

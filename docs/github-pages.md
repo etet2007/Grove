@@ -16,7 +16,7 @@ python3 -m http.server 8080 --directory site --bind 127.0.0.1
 
 ## 发布
 
-正式源码仓库：[etet2007/Grove](https://github.com/etet2007/Grove)，默认分支为 `main`。主页通过下述 GitHub Actions 工作流发布。
+正式源码仓库：[etet2007/Grove](https://github.com/etet2007/Grove)，默认分支为 `main`。产品主页：[Grove](https://etet2007.github.io/Grove/)。主页通过下述 GitHub Actions 工作流发布。
 
 1. 将源码推送到正式 GitHub 仓库。
 2. 在仓库 **Settings → Pages → Build and deployment → Source** 中选择 **GitHub Actions**。

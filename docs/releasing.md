@@ -12,7 +12,8 @@
 ## 源码与主页
 
 - 正式源码仓库：[etet2007/Grove](https://github.com/etet2007/Grove)，默认分支 `main`。
-- GitHub Pages 主页由 `.github/workflows/pages.yml` 发布，维护方法见 [GitHub Pages 主页](github-pages.md)。
+- 产品主页：[Grove](https://etet2007.github.io/Grove/)，由 `.github/workflows/pages.yml` 发布，维护方法见 [GitHub Pages 主页](github-pages.md)。
+- 2026-11-16：首次公开发布源码、中英文 README 与产品主页；未发布 App 安装包。
 - 源码与主页的公开发布不等同于 App 更新包发布；独立更新仓库尚未确定，不能将源码仓库自动作为应用更新源。
 
 ## 每次发布

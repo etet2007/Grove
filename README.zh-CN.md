@@ -8,7 +8,7 @@
 
 Grove 是面向多仓库工程的原生 macOS Git 客户端。在一个窗口中查看各仓库的未提交修改与本地提交记录，再通过**工作树组**，一次选择与当前任务相关的一整套 checkout。
 
-[English](README.md) · [开始使用](#开始使用) · [详细文档](#详细文档)
+[English](README.md) · [产品主页](https://etet2007.github.io/Grove/) · [开始使用](#开始使用) · [详细文档](#详细文档)
 
 ![Grove 在 feature/search 工作树组中展示三个仓库的修改与并排 diff](site/assets/grove-changes.png)
 
