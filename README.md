@@ -47,6 +47,14 @@ Browsing and automatic refresh use local Git data. Remote Git operations run onl
 
 Grove runs on **macOS 14 or later** and supports English and Simplified Chinese.
 
+### Download the app
+
+[Download Grove 0.1.2 Preview for Apple Silicon](https://github.com/etet2007/Grove/releases/download/v0.1.2/Grove-0.1.2-arm64.zip) · [Release notes and checksums](https://github.com/etet2007/Grove/releases/tag/v0.1.2)
+
+Unzip the download and move `Grove.app` to Applications. This build requires an **Apple Silicon Mac (M-series)** and macOS 14+; it does not support Intel Macs. You do not need Xcode or a signing certificate to use the prebuilt app.
+
+**This Preview is self-signed and has not been notarized by Apple.** macOS may block the first launch. If you choose to trust the release, use **System Settings → Privacy & Security → Open Anyway** after attempting to open it. See the [installation guide](docs/install.md) for details and checksum verification.
+
 ### Build from source
 
 The current packaging script requires **full Xcode with Icon Composer's `ictool`**, plus a valid code-signing identity in your login keychain. Command Line Tools alone are insufficient. It builds for your Mac's architecture.

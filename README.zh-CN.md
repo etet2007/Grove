@@ -47,6 +47,14 @@ Grove 是面向多仓库工程的原生 macOS Git 客户端。在一个窗口中
 
 Grove 支持 **macOS 14 或更新版本**，提供简体中文和 English 界面。
 
+### 下载应用
+
+[下载 Grove 0.1.2 Preview（Apple Silicon）](https://github.com/etet2007/Grove/releases/download/v0.1.2/Grove-0.1.2-arm64.zip) · [发布说明与校验值](https://github.com/etet2007/Grove/releases/tag/v0.1.2)
+
+解压后将 `Grove.app` 拖到「应用程序」。本包适用于 **Apple Silicon（M 系列芯片）Mac** 和 macOS 14+，不适用于 Intel Mac。使用预编译包无需安装 Xcode 或配置签名证书。
+
+**此 Preview 使用自签名证书，未经 Apple 公证。** 首次打开可能被系统阻止；如决定信任本发布，尝试打开后，可在「系统设置 → 隐私与安全性 → 仍要打开」中允许。详细步骤与校验方法见[安装指南](docs/install.md)。
+
 ### 从源码构建
 
 当前打包脚本需要**包含 Icon Composer `ictool` 的完整 Xcode**，以及登录钥匙串中可用的代码签名身份。仅安装 Command Line Tools 不足以打包。脚本生成适用于本机架构的应用。

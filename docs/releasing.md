@@ -59,6 +59,8 @@
 
 ## GitHub Releases 预览包
 
-2026-11-16：准备发布 `v0.1.2` / build `3`，目标 `arm64`（Apple Silicon），macOS 14+。测试 176 项、5 项跳过、零失败；构建、主程序及 Dock 插件架构、包签名、ZIP 解压后的版本与签名均已校验。已实际启动本次 `dist/Grove.app`，未重新执行应用所有控件的完整视觉验收。第三方依赖许可随包放在 `Contents/Resources/ThirdPartyNotices.txt`。未经 Apple 公证，不声称已通过 Gatekeeper。
+2026-11-16：已发布 [Grove 0.1.2 Preview](https://github.com/etet2007/Grove/releases/tag/v0.1.2) / build `3`，目标 `arm64`（Apple Silicon），macOS 14+。测试 176 项、5 项跳过、零失败；构建、主程序及 Dock 插件架构、包签名、ZIP 解压后的版本与签名均已校验。已实际启动本次 `dist/Grove.app`，未重新执行应用所有控件的完整视觉验收。第三方依赖许可随包放在 `Contents/Resources/ThirdPartyNotices.txt`。未经 Apple 公证，不声称已通过 Gatekeeper。
 
 发布顺序：提交并推送版本及下载入口，在该提交上创建 `v0.1.2` prerelease，上传 `Grove-0.1.2-arm64.zip` 和 `SHA256SUMS.txt`，核对 GitHub 附件摘要及实际下载，最后核对主页部署。`dist/release/latest.json` 仅为本地打包清单，未据此配置或发布独立应用更新仓库。
+
+预览包源码提交：`841cf10d954e2872a91b7a8946c457cf722a9fd6`。下载包 `Grove-0.1.2-arm64.zip`，4,261,058 字节；SHA-256：`49f27b1fd9bcad8671713d40282461620f709058b21ee3517c4699e1cabc0c15`。GitHub 附件摘要与本地一致。

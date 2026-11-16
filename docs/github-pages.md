@@ -25,7 +25,7 @@ python3 -m http.server 8080 --directory site --bind 127.0.0.1
 
 工作流只在仓库默认分支部署，不假定默认分支名称。GitHub Pages 的 environment 分支保护应允许该分支。流程使用 GitHub 官方的 [Pages 自定义工作流](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)。
 
-发布时自动将正式源码地址写入 `site/site-config.js`，显示 GitHub 源码与构建指南链接。本地没有配置该地址时，这两个链接隐藏，页面仍可阅读和交互。需要本地检查这两个入口时，可以在该文件中填入已经确定的正式 GitHub 仓库 URL；不要使用猜测地址。当前没有虚构下载链接；有正式安装包后再添加下载入口。
+发布时自动将正式源码地址写入 `site/site-config.js`，显示 GitHub 源码与构建指南链接。本地没有配置该地址时，这两个链接隐藏，页面仍可阅读和交互。需要本地检查这两个入口时，可以在该文件中填入已经确定的正式 GitHub 仓库 URL；不要使用猜测地址。预览包的下载入口位于导航、首屏和安装区域，固定指向 Releases 中对应版本与架构的 ZIP；更新版本时同步修改 README、页面版本说明、发布记录和下载链接，并先确保附件可下载。
 
 ## 内容与素材
 
@@ -73,4 +73,6 @@ Top three problems and disposition:
 3. desktop-page-01: the history crop showed an empty commit in the first capture; the final demo history uses commits with actual file changes.
 ```
 
-仍可继续完善：可下载且经验证的安装包，以及一段演示工作树组切换的真实录屏。当前截图为中文界面；网站文案与图片替代文本同时提供中英文。演示仓库名称和内容可保留为示例，正式发布前无需替换为用户真实工程。
+已增加 `0.1.2` Apple Silicon Preview 下载及首次打开说明；仍可继续完善 Developer ID 签名与公证，以及一段演示工作树组切换的真实录屏。当前截图为中文界面；网站文案与图片替代文本同时提供中英文。演示仓库名称和内容可保留为示例，正式发布前无需替换为用户真实工程。
+
+2026-11-16 下载入口验收：中英文均检查 1440/768/390/320 px，无整页横向溢出，标题保持两行以内；下载地址一致，首屏明确显示版本、Apple Silicon、macOS 14+ 和未公证提示。源码构建区改为可用键盘展开的说明，折叠时保留安装步骤为主体。视觉检查 0 FAIL、3 项保留提示（无视频、克制动效、字号层级）；设计方向与配色沿用上一版。
